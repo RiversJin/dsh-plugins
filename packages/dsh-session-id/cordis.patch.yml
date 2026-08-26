@@ -1,0 +1,4 @@
+# Mount the no-op host half so DSH discovers and serves the web client bundle.
+- insert:
+    - id: session-id
+      name: dsh-session-id
