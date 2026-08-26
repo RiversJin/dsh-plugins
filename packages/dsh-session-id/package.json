@@ -2,6 +2,11 @@
   "name": "dsh-session-id",
   "version": "0.2.0",
   "description": "Show and copy DeepSeek Harness session IDs beside their web sidebar titles.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiversJin/dsh-plugins.git",
+    "directory": "packages/dsh-session-id"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",

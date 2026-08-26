@@ -2,6 +2,11 @@
   "name": "dsh-http-gzip",
   "version": "0.3.0",
   "description": "Negotiated Brotli, Zstandard, and gzip compression for compressible DSH web responses",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiversJin/dsh-plugins.git",
+    "directory": "packages/dsh-http-gzip"
+  },
   "type": "module",
   "main": "./index.js",
   "exports": "./index.js",

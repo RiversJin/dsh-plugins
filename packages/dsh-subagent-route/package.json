@@ -2,6 +2,11 @@
   "name": "dsh-subagent-route",
   "version": "0.1.0",
   "description": "Allowlisted per-call LLM routing for continuable DSH fork subagents",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiversJin/dsh-plugins.git",
+    "directory": "packages/dsh-subagent-route"
+  },
   "type": "module",
   "main": "./index.js",
   "exports": {

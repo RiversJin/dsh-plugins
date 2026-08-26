@@ -2,6 +2,11 @@
   "name": "dsh-context-milestones",
   "version": "0.2.0",
   "description": "Durable model-visible context usage and model-switch notices for DSH agents",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiversJin/dsh-plugins.git",
+    "directory": "packages/dsh-context-milestones"
+  },
   "type": "module",
   "main": "./index.js",
   "exports": {
