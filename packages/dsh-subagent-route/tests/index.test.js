@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apply, resolveRoute } from '../index.js'
+import { apply, resolveRoute } from '../lib/index.js'
 
 const qwen = {
   name: 'qwen',

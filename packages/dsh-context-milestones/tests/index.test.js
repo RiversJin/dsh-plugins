@@ -7,7 +7,7 @@ import {
   name,
   renderModelSwitchNotice,
   renderNotice,
-} from '../index.js'
+} from '../lib/index.js'
 
 function noticeEvent(seq, milestone, contextWindow = 1000) {
   const rendered = renderNotice({

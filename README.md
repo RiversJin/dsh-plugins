@@ -11,10 +11,12 @@ A pnpm workspace containing independently packaged plugins for DeepSeek Harness.
 
 Each directory under `packages/` is a standalone DSH plugin with its own package name, version, tests, and release boundary. The repository-level commands run the corresponding scripts across every package that defines them:
 
+All maintained source is strict TypeScript. Packages publish compiled ESM and
+declaration files from `lib/`; DSH never depends on unchecked source files.
+
 ```sh
 pnpm install
 pnpm test
 pnpm typecheck
 pnpm build
 ```
-

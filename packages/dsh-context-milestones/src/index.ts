@@ -1,25 +1,57 @@
+import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-compaction'
+import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-token-meter'
 
 export const name = 'dsh-context-milestones'
 export const inject = ['agents', 'tokenMeter']
 
-export const Config = z.object({
+export interface PluginConfig {
+  stepPercent?: number
+  modelSwitchNotice?: boolean
+}
+
+export interface ModelRoute {
+  provider: string
+  model: string
+}
+
+export interface Notice {
+  summary: string
+  text: string
+}
+
+export interface ContextMilestone {
+  percent: number
+  milestone: number
+}
+
+export interface RenderNoticeInput extends ContextMilestone {
+  totalTokens: number
+  contextWindow: number
+}
+
+export const Config: z<PluginConfig> = z.object({
   stepPercent: z.natural().min(1).max(100).default(5),
   modelSwitchNotice: z.boolean().default(true),
 })
 
 const NOTICE_PATTERN = /^\[Framework-injected context\] [\d.]+% used \(\d+\/(\d+) tokens\); crossed (\d+)%\.$/u
 
-function validContextWindow(value) {
-  return Number.isSafeInteger(value) && value > 0
+function validContextWindow(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
-function successfulCompaction(event) {
+function successfulCompaction(event: SessionEvent): boolean {
   return event.type === 'compaction/end' && event.data.error === undefined
 }
 
-function parseNotice(event) {
+function parseNotice(event: SessionEvent): { contextWindow: number, milestone: number } | undefined {
   if (event.type !== 'user/message') return undefined
   const source = event.data.source
   if (source.kind !== 'plugin' || source.plugin !== name) return undefined
@@ -38,17 +70,22 @@ function parseNotice(event) {
  * Successful summarizing compaction begins a new cycle even when it retained
  * the old notice among its recent surface nodes.
  */
-export function latestMilestone(session, visibleNodes) {
+export function latestMilestone(
+  session: Pick<Session, 'events'>,
+  visibleNodes: ReadonlySet<number>,
+): { contextWindow: number, milestone: number } | undefined {
   const events = session.events
   let cycleStart = -1
   for (let index = events.length - 1; index >= 0; index--) {
-    if (successfulCompaction(events[index])) {
+    const event = events[index]
+    if (event !== undefined && successfulCompaction(event)) {
       cycleStart = index
       break
     }
   }
   for (let index = events.length - 1; index > cycleStart; index--) {
     const event = events[index]
+    if (event === undefined) continue
     if (!visibleNodes.has(event.seq)) continue
     const state = parseNotice(event)
     if (state !== undefined) return state
@@ -56,7 +93,11 @@ export function latestMilestone(session, visibleNodes) {
   return undefined
 }
 
-export function contextMilestone(totalTokens, contextWindow, stepPercent) {
+export function contextMilestone(
+  totalTokens: number,
+  contextWindow: number,
+  stepPercent: number,
+): ContextMilestone | undefined {
   if (!Number.isFinite(totalTokens) || totalTokens < 0 || !validContextWindow(contextWindow)) return undefined
   const percent = totalTokens / contextWindow * 100
   const milestone = Math.min(100, Math.floor(percent / stepPercent) * stepPercent)
@@ -64,14 +105,19 @@ export function contextMilestone(totalTokens, contextWindow, stepPercent) {
   return { percent, milestone }
 }
 
-export function renderNotice({ percent, milestone, totalTokens, contextWindow }) {
+export function renderNotice({
+  percent,
+  milestone,
+  totalTokens,
+  contextWindow,
+}: RenderNoticeInput): Notice {
   const exactPercent = percent.toFixed(1)
   const summary = `Context ${exactPercent}% used; crossed ${milestone}%`
   const text = `[Framework-injected context] ${exactPercent}% used (${Math.round(totalTokens)}/${contextWindow} tokens); crossed ${milestone}%.`
   return { summary, text }
 }
 
-function routeOf(variables) {
+function routeOf(variables: { provider?: unknown, model?: unknown } | undefined): ModelRoute | undefined {
   const provider = variables?.provider
   const model = variables?.model
   if (typeof provider !== 'string' || provider.length === 0) return undefined
@@ -79,11 +125,11 @@ function routeOf(variables) {
   return { provider, model }
 }
 
-function sameRoute(left, right) {
+function sameRoute(left: ModelRoute, right: ModelRoute): boolean {
   return left.provider === right.provider && left.model === right.model
 }
 
-export function renderModelSwitchNotice(previous, current) {
+export function renderModelSwitchNotice(previous: ModelRoute, current: ModelRoute): Notice {
   const from = `${previous.provider}/${previous.model}`
   const to = `${current.provider}/${current.model}`
   return {
@@ -92,7 +138,7 @@ export function renderModelSwitchNotice(previous, current) {
   }
 }
 
-function pluginNotice(notice) {
+function pluginNotice(notice: Notice): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text: notice.text }],
     source: {
@@ -104,10 +150,10 @@ function pluginNotice(notice) {
   })
 }
 
-export function apply(ctx, config) {
+export function apply(ctx: Context, config: PluginConfig): void {
   const stepPercent = config.stepPercent ?? 5
   const modelSwitchNotice = config.modelSwitchNotice ?? true
-  const selectedRoutes = new WeakMap()
+  const selectedRoutes = new WeakMap<Session, ModelRoute>()
 
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembled = await next()
@@ -121,7 +167,7 @@ export function apply(ctx, config) {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
 
-    const notices = []
+    const notices: UserMessage[] = []
     if (modelSwitchNotice) {
       const selected = selectedRoutes.get(agent.session)
       const previousConfig = agent.session.requestHeader()?.config

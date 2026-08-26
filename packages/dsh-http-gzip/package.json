@@ -1,6 +1,6 @@
 {
   "name": "dsh-http-gzip",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Negotiated Brotli, Zstandard, and gzip compression for compressible DSH web responses",
   "repository": {
     "type": "git",
@@ -8,15 +8,44 @@
     "directory": "packages/dsh-http-gzip"
   },
   "type": "module",
-  "main": "./index.js",
-  "exports": "./index.js",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
-    "index.js",
-    "cordis.patch.yml"
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  }
+  },
+  "scripts": {
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true });\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.js",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.2",
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "license": "MIT"
 }
