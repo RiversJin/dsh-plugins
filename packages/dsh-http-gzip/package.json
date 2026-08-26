@@ -1,0 +1,17 @@
+{
+  "name": "dsh-http-gzip",
+  "version": "0.3.0",
+  "description": "Negotiated Brotli, Zstandard, and gzip compression for compressible DSH web responses",
+  "type": "module",
+  "main": "./index.js",
+  "exports": "./index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

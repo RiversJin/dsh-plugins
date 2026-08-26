@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-http-gzip
+      name: dsh-http-gzip
