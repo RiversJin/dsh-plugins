@@ -1,6 +1,6 @@
 {
   "name": "dsh-optical-compaction",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "DSH port of OMP Snapcompact bitmap-frame context compaction",
   "type": "module",
   "main": "./lib/index.js",

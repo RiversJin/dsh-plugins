@@ -25,6 +25,8 @@ Decay is lazy: no timer rewrites an idle session. DSH event timestamps, normaliz
 
 The active route must declare image input. A text-only route uses the configured semantic fallback. Before committing frames, the adapter estimates the model-context occupancy of both the selected source and the complete optical checkpoint with OMP's provider-aware, height-aware image-token rules plus DSH's text estimator. Any strictly smaller optical checkpoint is kept; if it is equal to or larger than the source, optical compaction has stopped freeing context and the adapter uses the same semantic fallback without saving the candidate frames. This is a context-capacity guard, not a price optimizer. DSH's basic engine still performs its final local shrink check. Original conversational image blocks are not copied into the archived transcript, matching OMP serialization; images in the recent retained tail remain untouched.
 
+Manual `/compact` first runs the configured replay-safe `toolResultPruner` inside the agent's idle maintenance lock, persists any replacements, and only then selects the optical compaction range. Automatic pressure and overflow paths already perform the same pre-pass in `dsh-compaction-basic`. The optical serializer's smaller per-result, per-argument, and per-call caps remain a second archive-only boundary; they do not rewrite recent live history.
+
 ## DSH host boundaries
 
 Two OMP inputs have no equivalent in the current DSH compaction and attachment contracts:

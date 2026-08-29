@@ -30,6 +30,7 @@ import {
   informationFrameLimit,
   ompApiForProvider,
   opticalReducesContext,
+  withManualToolResultPruning,
 } from '../lib/engine.js'
 
 function pricedShape(name, frameSize = 128) {
@@ -94,6 +95,66 @@ test('caps Kimi dense visual working sets independently of its 1M context window
   assert.equal(informationFrameLimit(8, 16_001, 16_000), 2)
   assert.equal(informationFrameLimit(8, 114_267, 16_000), 8)
   assert.equal(informationFrameLimit(8, 1_000_000, 16_000), 8)
+})
+
+test('manual optical compaction pre-prunes tool results inside the idle maintenance lock', async () => {
+  const trace = []
+  const session = { id: 'manual-prune-session' }
+  let locked = false
+  const context = {
+    get(name) {
+      assert.equal(name, 'toolResultPruner')
+      return {
+        pruneSession(actualSession) {
+          assert.equal(actualSession, session)
+          assert.equal(locked, true)
+          trace.push('prune')
+          return { pruned: [{ originalSeq: 1 }], charsRemoved: 12_345 }
+        },
+      }
+    },
+    logger: {
+      info(message) {
+        assert.match(message, /manual pre-prune trimmed 1 tool results \(12345 chars removed\)/)
+        trace.push('log')
+      },
+    },
+    sessions: {
+      async flush(actualSession) {
+        assert.equal(actualSession, session)
+        assert.equal(locked, true)
+        trace.push('flush')
+      },
+    },
+  }
+  const agent = {
+    session,
+    runMaintenance(task) {
+      assert.equal(locked, false)
+      locked = true
+      trace.push('lock')
+      return task(new AbortController().signal).finally(() => {
+        trace.push('unlock')
+        locked = false
+      })
+    },
+  }
+  const wrapped = withManualToolResultPruning(context, agent, new AbortController().signal)
+  const value = await wrapped.runMaintenance(async () => {
+    assert.equal(locked, true)
+    trace.push('compact')
+    return 'done'
+  })
+
+  assert.equal(value, 'done')
+  assert.deepEqual(trace, ['lock', 'prune', 'log', 'flush', 'compact', 'unlock'])
+  assert.equal(locked, false)
+})
+
+test('manual optical compaction leaves the agent untouched without a pruner service', () => {
+  const agent = { session: {} }
+  const context = { get() { return undefined } }
+  assert.equal(withManualToolResultPruning(context, agent, new AbortController().signal), agent)
 })
 
 test('native OMP renderer emits height-hugging PNG and renderMany agrees with frames()', async () => {

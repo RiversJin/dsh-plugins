@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
-import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction'
+import { isCompactCheckpointSource, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
   BlockAssembler,
@@ -31,6 +31,15 @@ interface SummarizationInput {
   readonly tools?: readonly ToolSchema[]
   readonly messages: readonly DshMessage[]
 }
+
+interface ManualToolResultPruner {
+  pruneSession(session: Agent['session']): {
+    readonly pruned: readonly unknown[]
+    readonly charsRemoved: number
+  }
+}
+
+type MaintenanceTask<T> = (signal: AbortSignal) => Promise<T>
 
 type SummaryResult = {
   summary: ContentBlock[]
@@ -380,6 +389,51 @@ async function materializeHistoryBlocks(
   })
 }
 
+/** Interpose the existing replay-safe tool-result pruner inside the same idle
+ * maintenance lock that BasicCompactionEngine uses for an explicit /compact.
+ * Automatic pressure/overflow compaction already performs this pre-pass in the
+ * base engine; only the manual path needs this adapter. */
+export function withManualToolResultPruning(
+  context: Context,
+  agent: Agent,
+  requestSignal: AbortSignal,
+): Agent {
+  const pruner = context.get('toolResultPruner') as ManualToolResultPruner | undefined
+  if (pruner === undefined) return agent
+
+  return new Proxy(agent, {
+    get(target, property, receiver) {
+      if (property !== 'runMaintenance') return Reflect.get(target, property, receiver)
+      return <T>(task: MaintenanceTask<T>): Promise<T> => target.runMaintenance(async agentSignal => {
+        const operationSignal = AbortSignal.any([agentSignal, requestSignal])
+        try {
+          operationSignal.throwIfAborted()
+          const result = pruner.pruneSession(target.session)
+          if (result.pruned.length > 0) {
+            context.logger.info(
+              `dsh-optical-compaction: manual pre-prune trimmed ${result.pruned.length} tool results `
+                + `(${result.charsRemoved} chars removed)`,
+            )
+            await context.sessions.flush(target.session)
+          }
+          operationSignal.throwIfAborted()
+          return await task(agentSignal)
+        } catch (error) {
+          if (operationSignal.aborted) {
+            throw new ManualCompactionError('cancelled', 'manual compaction was cancelled', { cause: error })
+          }
+          if (error instanceof ManualCompactionError) throw error
+          throw new ManualCompactionError(
+            'summary',
+            'manual compaction tool-result pre-prune failed',
+            { cause: error },
+          )
+        }
+      })
+    },
+  })
+}
+
 /** DSH compaction backend carrying OMP Snapcompact through DSH's durable seams. */
 export class OpticalCompactionEngine extends BasicCompactionEngine {
   constructor(
@@ -387,6 +441,18 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
     private readonly pluginConfig: ResolvedPluginConfig,
   ) {
     super(opticalContext, pluginConfig.engine)
+  }
+
+  override compactNow(
+    agent: Agent,
+    signal: AbortSignal,
+    sourceCommandId?: Parameters<BasicCompactionEngine['compactNow']>[2],
+  ): ReturnType<BasicCompactionEngine['compactNow']> {
+    return super.compactNow(
+      withManualToolResultPruning(this.opticalContext, agent, signal),
+      signal,
+      sourceCommandId,
+    )
   }
 
   private async semanticFallback(
