@@ -6,6 +6,7 @@ A pnpm workspace containing independently packaged plugins for DeepSeek Harness.
 
 - `dsh-context-milestones`: durable model-visible context usage and model-switch notices.
 - `dsh-http-gzip`: negotiated Brotli, Zstandard, and gzip compression for DSH Web responses.
+- `dsh-optical-compaction`: OMP-compatible bitmap context compaction with semantic fallback and time-aware resolution decay.
 - `dsh-session-id`: display and copy session IDs in the DSH Web sidebar.
 - `dsh-subagent-route`: allowlisted per-call model routing for continuable fork subagents.
 

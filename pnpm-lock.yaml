@@ -53,6 +53,62 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/dsh-optical-compaction:
+    dependencies:
+      '@oh-my-pi/pi-natives':
+        specifier: 18.0.10
+        version: 18.0.10
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-agent':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(c1537a8836b04097f168b024f1e38d85)
+      '@deepseek-ai/dsh-attachment':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
+      '@deepseek-ai/dsh-compaction':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(80d45efbb3b7de81b65c253ede5096fd)
+      '@deepseek-ai/dsh-compaction-basic':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(99c56cad9c5155bb0115d4db3b7458e8)
+      '@deepseek-ai/dsh-llm':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))
+      '@deepseek-ai/dsh-session':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
+      '@deepseek-ai/dsh-token-meter':
+        specifier: ^0.1.1-rc.2
+        version: 0.1.1-rc.2(1159d8efe00425ee77a142a2325d2efd)
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+    optionalDependencies:
+      '@oh-my-pi/pi-natives-darwin-arm64':
+        specifier: 18.0.10
+        version: 18.0.10
+      '@oh-my-pi/pi-natives-darwin-x64':
+        specifier: 18.0.10
+        version: 18.0.10
+      '@oh-my-pi/pi-natives-linux-arm64':
+        specifier: 18.0.10
+        version: 18.0.10
+      '@oh-my-pi/pi-natives-linux-x64':
+        specifier: 18.0.10
+        version: 18.0.10
+      '@oh-my-pi/pi-natives-win32-x64':
+        specifier: 18.0.10
+        version: 18.0.10
+
   packages/dsh-session-id:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -417,6 +473,22 @@ packages:
       '@deepseek-ai/dsh-scope': ^0.1.1-rc.2
       '@deepseek-ai/dsh-session': ^0.1.1-rc.2
       '@deepseek-ai/dsh-typert-protocol': ^0.1.1-rc.2
+
+  '@deepseek-ai/dsh-compaction-basic@0.1.1-rc.2':
+    resolution: {integrity: sha512-qNg4JqWlZ5NvlFmaVZtJ+RuvJUtYFgdS7xXlhhBGSHbMZi4sHgB63Mo+9Y0Rl8glLSxLjo2reMMPlECN+duUuw==}
+    peerDependencies:
+      '@deepseek-ai/cordis': ^4.0.1
+      '@deepseek-ai/dsh-agent': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-commands': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-compaction': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-compaction-tool-result-pruner': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-invariants': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-llm': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-session': ^0.1.1-rc.2
+      '@deepseek-ai/dsh-token-meter': ^0.1.1-rc.2
+    peerDependenciesMeta:
+      '@deepseek-ai/dsh-compaction-tool-result-pruner':
+        optional: true
 
   '@deepseek-ai/dsh-compaction@0.1.1-rc.2':
     resolution: {integrity: sha512-LV5GAIx7GO8DCRivnN2bmLmuucsYDG+ifG18BaXBqsVKdrzmaIu5o+CBxQAI2bX1N6mfBenLxmvCnROkyumLTg==}
@@ -904,6 +976,40 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.4
+
+  '@oh-my-pi/pi-natives-darwin-arm64@18.0.10':
+    resolution: {integrity: sha512-C3hUXkAjZf3FmiC0mNvFer4k8f7siV8nzXIFrnOspfhxTkdUTXdIbvprvMuxCdQth3YLgmb9sMD0G0VYQFi+Hw==}
+    engines: {bun: '>=1.3.14'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@oh-my-pi/pi-natives-darwin-x64@18.0.10':
+    resolution: {integrity: sha512-Sjw4q5KpvpdAH1OosUQu98LHT6PTdIelwWu16J9uDnRX4it6B3341X9+1bH6uOyct8+e84K9IeqRFhRanEYHhg==}
+    engines: {bun: '>=1.3.14'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@oh-my-pi/pi-natives-linux-arm64@18.0.10':
+    resolution: {integrity: sha512-vNEv2DxEqkW7v5q4eH2BxYS/rID9wWhC1Ar/0WMi3ZrTOI5umsJTz3+meTjgKEZOJKOX6YN//lsld0MGzZi/eA==}
+    engines: {bun: '>=1.3.14'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@oh-my-pi/pi-natives-linux-x64@18.0.10':
+    resolution: {integrity: sha512-AA5LrWUsWLp6HxOfwpjsrZQNf7nL/ezFeS1KDNWYMmw20wXl3peyogxbJcsNjDtWHreMjEhy5pAOW1wniM9EBg==}
+    engines: {bun: '>=1.3.14'}
+    cpu: [x64]
+    os: [linux]
+
+  '@oh-my-pi/pi-natives-win32-x64@18.0.10':
+    resolution: {integrity: sha512-FGVwTnIdErWOf/S2oXDeGXsAZdcHJGehcCvWxG9mui9YQoEpqgFE3F+NHLPrdzWSmPU5lrD5dbKsO57EAFU9PQ==}
+    engines: {bun: '>=1.3.14'}
+    cpu: [x64]
+    os: [win32]
+
+  '@oh-my-pi/pi-natives@18.0.10':
+    resolution: {integrity: sha512-yXrEKGs9ZtvEpWUSsgYrgI8ySch1jBxFDNGqgsv9chVuiGw0zGUPPr2c7Wf7AnpqhmYM/H179Hx7eQPX8KsoTQ==}
+    engines: {bun: '>=1.3.14'}
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
@@ -1557,6 +1663,18 @@ snapshots:
       '@deepseek-ai/dsh-typert-protocol': 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))
       zod: 4.4.3
 
+  '@deepseek-ai/dsh-compaction-basic@0.1.1-rc.2(99c56cad9c5155bb0115d4db3b7458e8)':
+    dependencies:
+      '@deepseek-ai/cordis': 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-agent': 0.1.1-rc.2(c1537a8836b04097f168b024f1e38d85)
+      '@deepseek-ai/dsh-commands': 0.1.1-rc.2(0ecd3a66a950f0a38490382753aa1d93)
+      '@deepseek-ai/dsh-compaction': 0.1.1-rc.2(80d45efbb3b7de81b65c253ede5096fd)
+      '@deepseek-ai/dsh-invariants': 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)
+      '@deepseek-ai/dsh-llm': 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))
+      '@deepseek-ai/dsh-session': 0.1.1-rc.2(a4e4bb24a1f3580ac25e11cfa3c6b8cc)
+      '@deepseek-ai/dsh-token-meter': 0.1.1-rc.2(1159d8efe00425ee77a142a2325d2efd)
+      '@deepseek-ai/schemastery': 3.18.1
+
   '@deepseek-ai/dsh-compaction@0.1.1-rc.2(80d45efbb3b7de81b65c253ede5096fd)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
@@ -2067,6 +2185,29 @@ snapshots:
       '@emnapi/runtime': 1.11.1
       '@tybys/wasm-util': 0.10.3
     optional: true
+
+  '@oh-my-pi/pi-natives-darwin-arm64@18.0.10':
+    optional: true
+
+  '@oh-my-pi/pi-natives-darwin-x64@18.0.10':
+    optional: true
+
+  '@oh-my-pi/pi-natives-linux-arm64@18.0.10':
+    optional: true
+
+  '@oh-my-pi/pi-natives-linux-x64@18.0.10':
+    optional: true
+
+  '@oh-my-pi/pi-natives-win32-x64@18.0.10':
+    optional: true
+
+  '@oh-my-pi/pi-natives@18.0.10':
+    optionalDependencies:
+      '@oh-my-pi/pi-natives-darwin-arm64': 18.0.10
+      '@oh-my-pi/pi-natives-darwin-x64': 18.0.10
+      '@oh-my-pi/pi-natives-linux-arm64': 18.0.10
+      '@oh-my-pi/pi-natives-linux-x64': 18.0.10
+      '@oh-my-pi/pi-natives-win32-x64': 18.0.10
 
   '@oxc-project/types@0.139.0': {}
 

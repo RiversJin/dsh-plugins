@@ -1,0 +1,6 @@
+# Install the package without publishing a process-global compaction service.
+# Mount it explicitly inside an agent preset's isolated `compaction` realm.
+- insert:
+    - id: dsh-optical-compaction
+      name: dsh-optical-compaction
+      disabled: true

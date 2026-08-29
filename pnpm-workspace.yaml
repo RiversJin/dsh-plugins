@@ -1,3 +1,9 @@
 packages:
   - packages/*
-
+minimumReleaseAgeExclude:
+  - '@oh-my-pi/pi-natives-darwin-arm64@18.0.10'
+  - '@oh-my-pi/pi-natives-darwin-x64@18.0.10'
+  - '@oh-my-pi/pi-natives-linux-arm64@18.0.10'
+  - '@oh-my-pi/pi-natives-linux-x64@18.0.10'
+  - '@oh-my-pi/pi-natives-win32-x64@18.0.10'
+  - '@oh-my-pi/pi-natives@18.0.10'
