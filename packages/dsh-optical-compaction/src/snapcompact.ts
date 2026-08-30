@@ -2130,11 +2130,9 @@ function renderDecayedBuckets(
 	buckets: readonly DecayedSourceBucket[],
 	high: Shape,
 	api: Api | undefined,
-	volumeScale: number,
-	minScale: number,
 ): DecayedFrameBucket[] {
 	return buckets.map(bucket => {
-		const scale = Math.max(minScale, bucket.timeScale * volumeScale);
+		const scale = bucket.timeScale;
 		const shape = resolutionScaledShape(high, scale, api);
 		const geo = geometry(shape);
 		const pages = shape.columns === 2
@@ -2185,17 +2183,11 @@ function planDecayedArchive(
 		});
 	}
 
-	// First price the archive at its age-derived resolution. If that working set
-	// cannot fit the information-selected frame budget, lower all old buckets by
-	// the square root of the pressure before choosing pages. The square root keeps
-	// temporal differences visible while responding smoothly to dense history.
-	let buckets = renderDecayedBuckets(sourceBuckets, high, api, 1, decay.minScale);
-	const requiredFrames = buckets.reduce((sum, bucket) => sum + bucket.frames.length, 0);
-	const informationPressure = requiredFrames / maxFrames;
-	if (informationPressure > 1) {
-		const volumeScale = Math.max(decay.minScale, 1 / Math.sqrt(informationPressure));
-		buckets = renderDecayedBuckets(sourceBuckets, high, api, volumeScale, decay.minScale);
-	}
+	// Time alone owns visual fidelity. Information volume already determines the
+	// dynamic working-set size and the weighted page allocation below. Applying a
+	// shared density scale here as well can pin every busy bucket to minScale and
+	// erase the intended newer-to-older resolution gradient.
+	const buckets = renderDecayedBuckets(sourceBuckets, high, api);
 	const { frames, droppedFrames } = allocateDecayedFrames(buckets, maxFrames);
 	const frameSegments: TimedArchiveSegment[] = frames.map(frame => ({
 		bucketStart: frame.bucketStart as number,

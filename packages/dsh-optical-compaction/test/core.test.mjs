@@ -364,7 +364,7 @@ test('payload fitting retires one oldest visual prefix and keeps recent text ver
   assert.equal(historyBlocks(archive).filter(block => block.type === 'image').length, 1)
 })
 
-test('information volume increases density and shares pages with a recency bias', async () => {
+test('information volume shares pages without flattening time-derived resolution', async () => {
   const hour = 60 * 60 * 1000
   const period = 12 * hour
   const now = 2_000_000_000_000
@@ -397,7 +397,7 @@ test('information volume increases density and shares pages with a recency bias'
       {
         role: 'user',
         timestamp: now - 25 * hour,
-        content: `dense-marker ${'dense '.repeat(6000)} dense-marker`,
+        content: `dense-marker ${'dense '.repeat(6000)} ${'dense-marker '.repeat(20)}`,
       },
       {
         role: 'user',
@@ -413,7 +413,10 @@ test('information volume increases density and shares pages with a recency bias'
   assert.equal(archive?.frames.length, 3)
   assert.equal(archive.frames.filter(frame => frame.memoryAgePeriods === 2).length, 2)
   assert.equal(archive.frames.filter(frame => frame.memoryAgePeriods === 1).length, 1)
-  assert.ok(archive.frames.every(frame => (frame.resolutionScale ?? 1) < 0.9))
+  assert.deepEqual(
+    [...new Set(archive.frames.map(frame => frame.resolutionScale))],
+    [0.81, 0.9],
+  )
   assert.doesNotMatch(archive.text ?? '', /tiny-old-marker/)
   assert.match(archive.text ?? '', /dense-marker/)
   assert.match(archive.text ?? '', /near-marker/)
