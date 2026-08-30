@@ -4,6 +4,10 @@
 
 The package also loads the matching `@oh-my-pi/pi-natives` platform binary for Snapcompact rasterization and embedded fonts.
 
+The optional wide-glyph overlay bundles Fusion Pixel Font 12px Mono zh_hans,
+Copyright (c) 2022 TakWolf, under the SIL Open Font License 1.1. The complete
+font license is included as `FUSION-OFL.txt`.
+
 ## OMP MIT license
 
 MIT License

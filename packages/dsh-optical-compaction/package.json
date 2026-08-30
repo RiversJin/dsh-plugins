@@ -1,6 +1,6 @@
 {
   "name": "dsh-optical-compaction",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "DSH port of OMP Snapcompact bitmap-frame context compaction",
   "type": "module",
   "main": "./lib/index.js",
@@ -30,16 +30,18 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "FUSION-OFL.txt",
     "THIRD-PARTY-NOTICES.md"
   ],
   "scripts": {
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('lib', { recursive: true, force: true });\"",
-    "build": "npm run clean && tsc -p tsconfig.json",
+    "build": "npm run clean && tsc -p tsconfig.json && node --input-type=module -e \"import { cpSync } from 'node:fs'; cpSync('src/assets', 'lib/assets', { recursive: true });\"",
     "test": "npm run build && node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.95",
     "@oh-my-pi/pi-natives": "18.0.10"
   },
   "optionalDependencies": {

@@ -70,6 +70,13 @@ test('resolves OMP provider/model shapes and CJK-heavy Silver fallback', () => {
   assert.deepEqual(idealShapeVariant('anthropic/claude-4.7-opus'), { variant: '11on16-bw', frameSize: 1932 })
   assert.equal(resolveShapeForText('中文测试内容中文测试内容', { id: 'kimi-k3' }).font, 'silver')
   assert.equal(resolveShapeForText('mostly ASCII with 中文', { id: 'kimi-k3' }).font, '8x13')
+  const mixedShape = resolveShapeForText('中文测试内容中文测试内容', { id: 'kimi-k3' }, '11on16-bw')
+  assert.equal(mixedShape.font, '8x13')
+  assert.equal(scanRenderability('English reasoning with 中文对话', { shape: mixedShape }).isSafe, true)
+  const fusionShape = resolveShapeForText('English reasoning with 中文对话', { id: 'kimi-k3' }, 'hybrid-fusion12-bw')
+  assert.equal(fusionShape.font, '8x13')
+  assert.equal(fusionShape.wideFont, 'fusion12')
+  assert.equal(fusionShape.cellHeight, 12)
 })
 
 test('estimates height-aware provider image context tokens', () => {
@@ -170,6 +177,28 @@ test('native OMP renderer emits height-hugging PNG and renderMany agrees with fr
   const images = await renderMany(text, { shape })
   assert.equal(images.length, expected)
   assert.ok(images.every(image => image.mimeType === 'image/png'))
+})
+
+test('hybrid Fusion shape preserves Latin pixels and replaces only wide glyph cells', async () => {
+  const hybrid = pricedShape('hybrid-fusion12-bw', 128)
+  const silverFallback = { ...hybrid, wideFont: undefined }
+
+  const hybridLatin = await render('English 126524', hybrid)
+  const baselineLatin = await render('English 126524', silverFallback)
+  assert.equal(hybridLatin.data, baselineLatin.data)
+
+  const hybridMixed = await render('English 中文测试', hybrid)
+  const baselineMixed = await render('English 中文测试', silverFallback)
+  assert.notEqual(hybridMixed.data, baselineMixed.data)
+  assert.deepEqual(pngDimensions(hybridMixed.data), pngDimensions(baselineMixed.data))
+})
+
+test('renders persisted newline markers as return arrows instead of solid black cells', async () => {
+  const shape = pricedShape('11on16-bw', 128)
+  const archived = await render(`a${NEWLINE_GLYPH}b`, shape)
+  const lightweight = await render('a↵b', shape)
+
+  assert.equal(archived.data, lightweight.data)
 })
 
 test('serializes roles and merges paired tool output with OMP caps and dim markers', () => {

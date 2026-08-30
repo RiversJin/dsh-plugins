@@ -9,7 +9,8 @@ The DSH adapter is deliberately narrow:
 - DSH content blocks are translated into OMP's message vocabulary.
 - OMP PNG frames are committed through `ctx.attachments` and placed in the normal DSH compaction checkpoint.
 - OMP's kept archive source is stored in the checkpoint's durable, non-model-facing `rawOutput`, then unfolded and re-rendered on the next Snapcompact pass.
-- OMP's platform N-API package is loaded directly under Node; the renderer and embedded fonts are unchanged.
+- OMP's platform N-API package is loaded directly under Node. The `hybrid-fusion12-bw` variant keeps OMP's Latin bitmap layer and replaces only East Asian Wide/Fullwidth cells with the bundled Fusion Pixel 12px font.
+- OMP's persisted `U+2588` newline marker remains unchanged for replay compatibility, but DSH draws it as a lightweight `↵` inside PNG frames instead of a solid black cell. Long conversational archives contain enough line breaks that the upstream full-block rendering becomes distracting visual noise.
 
 The OMP port remains intact, with two DSH-side selection policies: a model-context guard that falls back to semantic compaction when images stop reducing context, and a timestamp-aware resolution-decay window for older optical pages.
 
@@ -61,7 +62,9 @@ The bundle row is disabled by default. Mount the plugin explicitly inside an age
         maxTokens: 8192
         optical:
           enabled: true
-          shape: auto
+          # K3-256k OCR comparison winner: native OMP Latin bitmap plus
+          # Fusion Pixel 12px for East Asian Wide/Fullwidth cells.
+          shape: hybrid-fusion12-bw
           maxFrames: 80
           # Kimi-specific payload headroom; the engine's effective page cap is 8.
           maxFrameDataBytes: 8000000
@@ -86,7 +89,7 @@ Do not mount another compaction backend in the same isolated realm.
 - `thresholdRatio`, retention, retry, `maxTokens`, and `auto` keep `@deepseek-ai/dsh-compaction-basic` semantics.
 - `summarizationProvider` and `summarizationModel` select the text-only/disabled fallback route. Omit both to use the conversation route.
 - Source images and candidate frames use the same provider context-token formula; partial-height PNG frames are measured by their actual dimensions. Visual compaction remains selected for every strict reduction and falls back to semantics only when it no longer frees context.
-- `optical.shape` is `auto` or one of OMP's exported shape variant names.
+- `optical.shape` is `auto` or one of the exported shape variant names. For Kimi conversations mixing Chinese dialogue with substantial English reasoning, prefer `hybrid-fusion12-bw`: it retains OMP's compact Latin bitmap layer while drawing East Asian Wide/Fullwidth cells with Fusion Pixel 12px. In a four-run K3-256k transcription comparison it preserved Silver's overall accuracy while improving CJK recall. `auto` remains provider-driven and may switch a CJK-heavy archive to whole-frame `silver16-bw`.
 - `optical.maxFrames` defaults to OMP's 80-frame ceiling and is further capped by DSH's per-message attachment limit. Kimi is additionally capped at eight dense transcript frames: the 1M K3 route could afford 20 in token space and accepted the wire request, but failed real recall at that visual scanning load. The actual working set is dynamic from one page up to that ceiling.
 - `optical.maxFrameDataBytes` defaults to OMP's 3,000,000-byte standing payload budget. If the rendered archive exceeds it, one oldest chronological frame prefix is retired during planning; the stored source and visible checkpoint always agree.
 - The three tool caps, `truncateHeadRatio`, `dimToolResults`, and `includeReasoning` map directly to OMP serialization options. Claude-family targets always exclude replayed reasoning, matching OMP's host integration.

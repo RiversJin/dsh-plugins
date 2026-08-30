@@ -46,6 +46,7 @@
  */
 
 import { stripVTControlCharacters } from "node:util";
+import { overlayFusionWideGlyphs, type FusionGlyphPlacement } from "./fusion.js";
 import { renderSnapcompactPng, snapcompactSupportedChars } from "./native.js";
 import { formatGroupedPaths } from "./path-tree.js";
 
@@ -106,6 +107,8 @@ const INTENT_FIELD = "i";
 export interface Shape {
 	/** Bundled font in the native renderer. */
 	font: "5x8" | "8x8" | "6x12" | "8x13" | "silver";
+	/** Optional DSH overlay for East Asian Wide/Fullwidth glyph cells. */
+	wideFont?: "fusion12";
 	/** Target cell advance in pixels; differing from the font's natural cell
 	 *  renders via Lanczos stretch (anti-aliased RGB frame). */
 	cellWidth: number;
@@ -168,6 +171,16 @@ export const SHAPE_VARIANTS = {
 		frameSize: 1568,
 	},
 	"8x13-bw": { font: "8x13", cellWidth: 8, cellHeight: 13, variant: "bw", lineRepeat: 1, frameSize: 1568 },
+	"hybrid-fusion12-bw": {
+		font: "8x13",
+		wideFont: "fusion12",
+		cellWidth: 8,
+		cellHeight: 12,
+		stretch: true,
+		variant: "bw",
+		lineRepeat: 1,
+		frameSize: 1568,
+	},
 	"8on16-bw": {
 		font: "8x13",
 		cellWidth: 8,
@@ -351,6 +364,7 @@ export function isShape(value: unknown): value is Shape {
 	const detail = shape.imageDetail;
 	return (
 		(font === "5x8" || font === "8x8" || font === "6x12" || font === "8x13" || font === "silver") &&
+		(shape.wideFont === undefined || shape.wideFont === "fusion12") &&
 		typeof shape.cellWidth === "number" &&
 		shape.cellWidth > 0 &&
 		typeof shape.cellHeight === "number" &&
@@ -1307,6 +1321,12 @@ const CHAR_FOLD: Record<string, string> = {
  *  collapsing at a one-cell cost. */
 export const NEWLINE_GLYPH = "\u2588";
 
+/** DSH display adaptation for OMP's persisted full-block newline marker.
+ *  Preserve U+2588 in archive source so older checkpoints remain replayable,
+ *  but draw a return arrow in PNG frames: mixed conversational transcripts
+ *  contain enough line breaks that full black cells become visual noise. */
+const RENDERED_NEWLINE_GLYPH = "\u21b5";
+
 /** Collapsed in one pass: whitespace plus zero-width format characters (ZWSP,
  *  BOM, directional marks — JS `\s` already counts BOM as whitespace, so they
  *  must fold here, before the per-character pass). */
@@ -1776,13 +1796,49 @@ function renderedChars(text: string, shape: Shape, geo: Geometry): number {
 	return count;
 }
 
+function fusionGlyphPlacements(text: string, shape: Shape, geo: Geometry): FusionGlyphPlacement[] {
+	if (shape.wideFont !== "fusion12" || shape.columns === 2) return [];
+	const glyphs: FusionGlyphPlacement[] = [];
+	let cell = 0;
+	let dim = false;
+	for (const char of text) {
+		if (char === DIM_ON) {
+			dim = true;
+			continue;
+		}
+		if (char === DIM_OFF) {
+			dim = false;
+			continue;
+		}
+		const cp = char.codePointAt(0);
+		const units = cp !== undefined && isWideCodePoint(cp) ? 2 : 1;
+		let at = cell;
+		if (units === 2 && geo.cols >= 2 && at % geo.cols === geo.cols - 1) at += 1;
+		if (at + units > geo.capacity) break;
+		if (units === 2) {
+			glyphs.push({ char, column: at % geo.cols, row: Math.floor(at / geo.cols), units, dim });
+		}
+		cell = at + units;
+	}
+	return glyphs;
+}
+
 /** Render one snapcompact frame from already-normalized text. Doc shapes
  *  (`columns === 2`) expect one page of `\n`-joined pre-wrapped lines. */
 export async function render(text: string, shape: Shape, size: number = shape.frameSize): Promise<RenderedFrame> {
 	const geo = geometry(shape, size);
 	const { cols, rows } = geo;
 	const chars = renderedChars(text, shape, geo);
-	const data = await renderSnapcompactPng(text, nativeRenderOptions(shape, size));
+	const visibleText = text.replaceAll(NEWLINE_GLYPH, RENDERED_NEWLINE_GLYPH);
+	const nativeData = await renderSnapcompactPng(visibleText, nativeRenderOptions(shape, size));
+	const data = shape.wideFont === "fusion12"
+		? await overlayFusionWideGlyphs(nativeData, {
+			cellWidth: shape.cellWidth,
+			cellHeight: shape.cellHeight,
+			lineRepeat: shape.lineRepeat,
+			glyphs: fusionGlyphPlacements(visibleText, shape, geo),
+		})
+		: nativeData;
 	return { data, cols, rows, chars };
 }
 
@@ -2349,7 +2405,7 @@ function renderSummaryPrompt(values: SummaryPromptValues): string {
 		"- Plain text: verbatim transcript; rely on it exactly.",
 	];
 	if (values.frameCount > 0) {
-		lines.push("- Some middle sections: images, not text. Each image: one page of that transcript, in reading order between marked delimiters. Solid black cell: newline; runs of spaces collapse to one.");
+		lines.push("- Some middle sections: images, not text. Each image: one page of that transcript, in reading order between marked delimiters. `↵` marks a collapsed newline; runs of spaces collapse to one.");
 		lines.push(
 			values.docColumns
 				? `  - Frame: two side-by-side columns, each ${values.cols} characters wide, up to ${values.rows} rows tall; read left top→bottom, then right.`
