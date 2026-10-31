@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-trajectory
+      name: '@riversjin/dsh-trajectory'

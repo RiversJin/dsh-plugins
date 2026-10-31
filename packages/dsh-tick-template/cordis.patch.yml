@@ -1,0 +1,7 @@
+# Insert inside the agent preset's plugin list (next to dsh-tool-web), so the tool only exists for that agent.
+- insert:
+    - id: tick-template
+      name: '@riversjin/dsh-tick-template'
+      config:
+        # Directories the templates may read files from; empty disables file reads.
+        fileRoots: []
