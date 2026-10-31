@@ -8,7 +8,7 @@
 |---|---|
 | `runtime/` | DSH 0.2.1-rc.5 运行时的 pnpm 配方：7 个打补丁的上游包用 `overrides` 替换，`@earendil-works/pi-ai` 钉 1.1.0 并带上游补丁 |
 | `profile-template/` | 只装插件的 profile：`package.json`（bundles 列表）、`cordis.patch.yml`（带占位符的完整配置） |
-| `packages/` | 全部 tgz（本仓库打包产物、打补丁的上游包、第三方 fork）。仓库里不提交 tgz，从 Release 下载或用 `scripts/pack-kit.sh` 生成 |
+| `packages/` | 全部 tgz（本仓库打包产物、打补丁的上游包、第三方 fork）。仓库里不提交 tgz，从 Release 下载，或用 `scripts/build-from-source.sh` 从源码构建 |
 | `install.sh` | 一键安装到指定 `DSH_HOME` |
 
 ## 前置条件
@@ -36,6 +36,29 @@ node --expose-internals ~/.dsh/runtime/dsh-0.2.1-rc.5/node_modules/@deepseek-ai/
 ```
 
 装完后至少改三处 `cordis.patch.yml`：`soul-md.cards` 里的人格卡；第一次对话后把主会话 id 填进 `schedule.timePassingSessions`；要用 QQ 入口就填 `im-qqbot` 的环境变量并把 `disabled` 改成 `false`。
+
+## 从源码构建
+
+不想用 Release 里的 tgz，可以全部从公开源码构建，结果放进 `kit/packages/`，之后照常运行 `install.sh`：
+
+```sh
+git clone https://github.com/RiversJin/dsh-plugins.git && cd dsh-plugins
+scripts/build-from-source.sh            # 源码克隆到 ~/.cache/dsh-companion-src，可用 --workdir 改位置
+kit/install.sh --dsh-home ~/.dsh --workspace ~/companion --name 月见 --user 我
+```
+
+脚本用到的源码：
+
+| 仓库 | 分支 | 产出 |
+|---|---|---|
+| [RiversJin/deepseek-harness](https://github.com/RiversJin/deepseek-harness) | `local/schedule-idle-0.2.1-rc.5` | 7 个打补丁的 `@deepseek-ai/dsh-*` 包 |
+| [RiversJin/dsh-plugins](https://github.com/RiversJin/dsh-plugins) | `main` | 12 个 `@riversjin/dsh-*` 插件 |
+| [RiversJin/dsh-layered-memory](https://github.com/RiversJin/dsh-layered-memory) | `upgrade/dsh-0.2.1-rc.5` | `dsh-layered-memory` |
+| [RiversJin/dsh-qqbot](https://github.com/RiversJin/dsh-qqbot) | `upgrade/dsh-0.2.1-rc.5` | `@tencent-connect/dsh-qqbot` |
+| [RiversJin/dsh-usage-stats](https://github.com/RiversJin/dsh-usage-stats) | `upgrade/dsh-0.2.1-rc.5` | `dsh-usage-stats` |
+| [RiversJin/dsh-soul-md](https://github.com/RiversJin/dsh-soul-md) | `rivers/dsh-0.2.1-rc.5` | `dsh-soul-md` |
+
+需要 git、Node ≥ 24、pnpm ≥ 11 和 npm。最慢的是 harness monorepo：依赖安装后有几 GB，完整构建一般要十几到几十分钟。已经有这 7 个 tgz 时，加 `--skip-harness` 只重建其余部分。四个 fork 都是 MIT 协议，保留原作者的 LICENSE。
 
 ## 为什么需要打补丁的运行时
 
@@ -73,5 +96,5 @@ node --expose-internals ~/.dsh/runtime/dsh-0.2.1-rc.5/node_modules/@deepseek-ai/
 
 - `kimi-auto` 只针对 kimi-coding 的 k3 / k3-256k；换主模型时把它从 bundles 里去掉即可。
 - dream-context 的提示词是中文，面向中文对话。
-- 四个第三方 fork 以 `-rivers.N` 版本随 tgz 分发，未发到 npm。
+- 四个第三方 fork 以 `-rivers.N` 版本随 tgz 分发，未发到 npm；源码见上表。
 - 升级 DSH 版本需要在 fork 上重打补丁、重新打包 7 个上游 tgz。

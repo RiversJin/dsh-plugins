@@ -21,7 +21,7 @@ All packages target DSH `>=0.2.1-rc.5 <0.3.0` on the patched runtime described i
 
 ## Distribution kit
 
-`kit/` holds the runtime recipe, a profile template and `install.sh`; `scripts/pack-kit.sh --extra <dir>` builds and packs every package into `kit/packages/`. See [kit/README.md](kit/README.md) (Chinese).
+`kit/` holds the runtime recipe, a profile template and `install.sh`; `scripts/pack-kit.sh --extra <dir>` builds and packs every package into `kit/packages/`; `scripts/build-from-source.sh` builds the whole set, including the patched harness packages and forks, from public repositories. See [kit/README.md](kit/README.md) (Chinese).
 
 
 Each directory under `packages/` is a standalone DSH plugin with its own package name, version, tests, and release boundary. The repository-level commands run the corresponding scripts across every package that defines them:

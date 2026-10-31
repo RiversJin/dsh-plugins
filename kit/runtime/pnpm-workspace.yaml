@@ -23,7 +23,7 @@ allowBuilds:
 # https://github.com/RiversJin/deepseek-harness branch local/schedule-idle-0.2.1-rc.5.
 overrides:
   '@earendil-works/pi-ai': 1.1.0
-  '@deepseek-ai/dsh-client-ui-schedule': file:upgrade-packages/deepseek-ai-dsh-client-ui-schedule-0.2.1-rc.5.client2.tgz
+  '@deepseek-ai/dsh-client-ui-schedule': file:upgrade-packages/deepseek-ai-dsh-client-ui-schedule-0.2.1-rc.5.tgz
   '@deepseek-ai/dsh-compaction-basic': file:upgrade-packages/deepseek-ai-dsh-compaction-basic-0.2.1-rc.5.tgz
   '@deepseek-ai/dsh-schedule': file:upgrade-packages/deepseek-ai-dsh-schedule-0.2.1-rc.5.tgz
   '@deepseek-ai/dsh-session-format-v3-to-v4': file:upgrade-packages/deepseek-ai-dsh-session-format-v3-to-v4-0.2.1-rc.5.tgz
