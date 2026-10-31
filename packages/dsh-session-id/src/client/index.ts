@@ -1,4 +1,5 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client';
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client';
 import { SidebarSessionIds } from './SidebarSessionIds.js';
@@ -13,7 +14,9 @@ function installStyle(): () => void {
   style.id = STYLE_ID;
   style.textContent = `
     .dsh-session-id__sidebar-suffix {
-      display: inline;
+      display: inline-block;
+      flex: 0 0 auto;
+      margin-left: 4px;
       padding: 0;
       border: 0;
       background: transparent;

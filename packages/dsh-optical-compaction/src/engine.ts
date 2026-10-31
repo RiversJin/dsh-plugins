@@ -2,9 +2,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import { isCompactCheckpointSource, ManualCompactionError } from '@deepseek-ai/dsh-compaction'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { deriveEventMessage } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import {
   BlockAssembler,
   createUserMessage,
+  offloadedImageText,
   type ContentBlock,
   type Message as DshMessage,
   type TokenUsage,
@@ -12,6 +15,13 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import type { ResolvedPluginConfig } from './config.js'
+import { prepareOriginalImages, type PreparedOriginalImages } from './original-images.js'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'plugin:dsh-optical-compaction': { kind: 'plugin:dsh-optical-compaction' }
+  }
+}
 import {
   compact,
   createFileOps,
@@ -97,9 +107,8 @@ function withoutImages(blocks: readonly ContentBlock[], images: ImageDimensions[
   const kept: ContentBlock[] = []
   for (const block of blocks) {
     if (block.type === 'image') {
-      images.push({ width: block.attachment.width, height: block.attachment.height })
-    } else if (block.type === 'tool-result') {
-      kept.push({ ...block, content: withoutImages(block.content, images) })
+      if (block.offloaded === true) kept.push({ type: 'text', text: offloadedImageText(block.attachment) })
+      else images.push({ width: block.attachment.width, height: block.attachment.height })
     } else {
       kept.push(block)
     }
@@ -144,25 +153,31 @@ function pngDimensions(data: string): ImageDimensions {
 function estimateOpticalCheckpointTokens(
   summary: string,
   history: readonly (TextContent | ImageContent)[],
+  originalPreviews: readonly ContentBlock[],
   tokenMeter: TokenMeter,
   api: Api | undefined,
 ): number {
+  const previewDimensions: ImageDimensions[] = []
   const textBlocks: ContentBlock[] = [
     { type: 'text', text: summary },
     ...history
       .filter((block): block is TextContent => block.type === 'text')
       .map(block => ({ type: 'text' as const, text: block.text })),
+    ...withoutImages(originalPreviews, previewDimensions),
   ]
   const textMessage = createUserMessage({
     content: textBlocks,
-    source: { kind: 'plugin', plugin: 'dsh-optical-compaction' },
+    source: { kind: 'plugin:dsh-optical-compaction' },
   })
   const imageTokens = history.reduce((total, block) => {
     if (block.type !== 'image') return total
     const dimensions = pngDimensions(block.data)
     return total + estimateImageContextTokens(api, dimensions.width, dimensions.height)
   }, 0)
-  return tokenMeter.estimateMessage(textMessage) + imageTokens + CHECKPOINT_FRAMING_TOKEN_ALLOWANCE
+  const previewTokens = previewDimensions.reduce(
+    (total, image) => total + estimateImageContextTokens(api, image.width, image.height), 0,
+  )
+  return tokenMeter.estimateMessage(textMessage) + imageTokens + previewTokens + CHECKPOINT_FRAMING_TOKEN_ALLOWANCE
 }
 
 function conversationTarget(agent: Agent): { provider: string; model: string } | undefined {
@@ -230,7 +245,7 @@ function checkpointSummary(message: DshMessage): string | undefined {
 
 function priorArchive(
   messages: readonly DshMessage[],
-  agent: Agent,
+  summaries: ReadonlyMap<string, readonly ContentBlock[]>,
 ): { messages: readonly DshMessage[]; previousSummary?: string; previousPreserveData?: Record<string, unknown> } {
   let previousSummary: string | undefined
   let previousPreserveData: Record<string, unknown> | undefined
@@ -246,12 +261,8 @@ function priorArchive(
       continue
     }
     const compactionId = message.source.compactionId
-    const event = [...agent.session.events].reverse().find(candidate =>
-      candidate.type === 'compaction/summary' && candidate.data.compactionId === compactionId
-    )
-    if (event?.type === 'compaction/summary') {
-      previousPreserveData = parsePreserveBlock(event.data.rawOutput)
-    }
+    const rawOutput = summaries.get(compactionId)
+    if (rawOutput !== undefined) previousPreserveData = parsePreserveBlock(rawOutput)
     if (previousPreserveData === undefined) previousSummary = checkpointSummary(message)
   }
 
@@ -272,16 +283,11 @@ function parseArguments(raw: string): Record<string, unknown> {
   }
 }
 
-function toolResultText(block: Extract<ContentBlock, { type: 'tool-result' }>): TextContent[] {
+function toolResultText(content: readonly ContentBlock[]): TextContent[] {
   const out: TextContent[] = []
-  const visit = (content: readonly ContentBlock[]): void => {
-    for (const nested of content) {
-      if (nested.type === 'text') out.push({ type: 'text', text: nested.text })
-      else if (nested.type === 'reasoning') out.push({ type: 'text', text: nested.text })
-      else if (nested.type === 'tool-result') visit(nested.content)
-    }
+  for (const block of content) {
+    if (block.type === 'text' || block.type === 'reasoning') out.push({ type: 'text', text: block.text })
   }
-  visit(block.content)
   return out
 }
 
@@ -293,6 +299,16 @@ export function toSnapcompactMessages(
   const out: SnapMessage[] = []
   for (const message of messages) {
     const timestamp = timestamps.get(message.id)
+    if (message.role === 'tool') {
+      out.push({
+        role: 'toolResult',
+        toolCallId: message.toolCallId,
+        content: toolResultText(message.content),
+        ...(message.isError === undefined ? {} : { isError: message.isError }),
+        ...(timestamp === undefined ? {} : { timestamp }),
+      })
+      continue
+    }
     if (message.role === 'assistant') {
       const content: Extract<SnapMessage, { role: 'assistant' }>['content'] = []
       for (const block of message.content) {
@@ -315,15 +331,6 @@ export function toSnapcompactMessages(
     for (const block of message.content) {
       if (block.type === 'text') userText.push({ type: 'text', text: block.text })
       else if (block.type === 'reasoning') userText.push({ type: 'text', text: block.text })
-      else if (block.type === 'tool-result') {
-        out.push({
-          role: 'toolResult',
-          toolCallId: block.toolCallId,
-          content: toolResultText(block),
-          ...(block.isError === undefined ? {} : { isError: block.isError }),
-          ...(timestamp === undefined ? {} : { timestamp }),
-        })
-      }
     }
     if (userText.length > 0) {
       out.push({ role: 'user', content: userText, ...(timestamp === undefined ? {} : { timestamp }) })
@@ -332,14 +339,40 @@ export function toSnapcompactMessages(
   return out
 }
 
-function messageTimestamps(messages: readonly DshMessage[], agent: Agent): ReadonlyMap<string, number> {
+/** Read historical metadata through a read handle, without retaining the full log. */
+export async function readOpticalHistory(
+  context: Context,
+  messages: readonly DshMessage[],
+  agent: Agent,
+  signal?: AbortSignal,
+): Promise<{ timestamps: Map<string, number>, summaries: Map<string, readonly ContentBlock[]> }> {
   const wanted = new Set(messages.map(message => message.id))
   const timestamps = new Map<string, number>()
-  for (const event of agent.session.events) {
-    const message = agent.session.deriveEventMessage(event)
-    if (message !== null && wanted.has(message.id)) timestamps.set(message.id, event.time)
+  const checkpoints = new Set(messages.flatMap(message =>
+    isCompactCheckpointSource(message.source) ? [message.source.compactionId] : [],
+  ))
+  const summaries = new Map<string, readonly ContentBlock[]>()
+  const cut = agent.session.seq
+  await context.sessions.flush(agent.session)
+  const handle = await context.sessionPersistence.open(agent.session.id, 'read', signal === undefined ? {} : { signal })
+  try {
+    for (let offset = 0; offset < cut;) {
+      signal?.throwIfAborted()
+      const { events } = await handle.read(offset, Math.min(512, cut - offset), signal === undefined ? {} : { signal })
+      if (events.length === 0) throw new Error('optical history ended before the captured session boundary')
+      for (const event of events) {
+        const message = deriveEventMessage(event)
+        if (message !== null && wanted.has(message.id)) timestamps.set(message.id, event.time)
+        if (event.type === 'compaction/summary' && checkpoints.has(event.data.compactionId) && event.data.rawOutput !== undefined) {
+          summaries.set(event.data.compactionId, event.data.rawOutput)
+        }
+      }
+      offset += events.length
+    }
+  } finally {
+    await handle.close()
   }
-  return timestamps
+  return { timestamps, summaries }
 }
 
 export function ompApiForProvider(provider: string): Api | undefined {
@@ -460,6 +493,7 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
     input: SummarizationInput,
     agent: Agent,
     signal?: AbortSignal,
+    preparedImages?: PreparedOriginalImages,
   ): Promise<SummaryResult> {
     this.opticalContext.logger.warn(`dsh-optical-compaction: semantic fallback (${reason})`)
     const configuredProvider = this.pluginConfig.engine.summarizationProvider
@@ -475,11 +509,17 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
       throw new Error('dsh-optical-compaction: semantic fallback has no provider/model route')
     }
     const maxTokens = this.pluginConfig.engine.maxTokens ?? 8192
+    const originals = preparedImages ?? await prepareOriginalImages(
+      this.opticalContext.attachments,
+      input.messages,
+      (await readOpticalHistory(this.opticalContext, input.messages, agent, signal)).summaries,
+      signal,
+    )
     const messages = [
-      ...input.messages,
+      ...originals.semanticMessages,
       createUserMessage({
         content: [{ type: 'text', text: this.pluginConfig.summaryPrompt }],
-        source: { kind: 'plugin', plugin: 'dsh-optical-compaction' },
+        source: { kind: 'plugin:dsh-optical-compaction' },
       }),
     ]
     const assembler = new BlockAssembler()
@@ -506,8 +546,8 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
       throw new Error('dsh-optical-compaction: semantic fallback produced no text')
     }
     return {
-      summary,
-      rawOutput,
+      summary: [...summary, ...originals.summary],
+      rawOutput: [...rawOutput, ...originals.rawOutput],
       llmStreamCall: true,
       provider,
       model,
@@ -531,7 +571,11 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
       return this.semanticFallback(`${target.provider}/${target.model} does not declare image input`, input, agent, signal)
     }
 
-    const prior = priorArchive(input.messages, agent)
+    const historyMetadata = await readOpticalHistory(this.opticalContext, input.messages, agent, signal)
+    const originals = await prepareOriginalImages(
+      this.opticalContext.attachments, input.messages, historyMetadata.summaries, signal,
+    )
+    const prior = priorArchive(originals.transcriptMessages, historyMetadata.summaries)
     const tokenMeter = (this.opticalContext as Context & { tokenMeter: TokenMeter }).tokenMeter
     const api = ompApiForProvider(target.provider)
     const sourceMultimodalTokens = input.messages.reduce(
@@ -558,7 +602,7 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
         )
       : readerFrameLimit
     const forcedShape = config.shape === 'auto' ? undefined : resolveShape(modelTarget, config.shape)
-    const messages = toSnapcompactMessages(prior.messages, messageTimestamps(prior.messages, agent))
+    const messages = toSnapcompactMessages(prior.messages, historyMetadata.timestamps)
 
     throwIfAborted(signal)
     const result = await compact({
@@ -595,10 +639,11 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
         input,
         agent,
         signal,
+        originals,
       )
     }
     const visible = historyBlocks(archive)
-    const opticalTokens = estimateOpticalCheckpointTokens(result.summary, visible, tokenMeter, api)
+    const opticalTokens = estimateOpticalCheckpointTokens(result.summary, visible, originals.summary, tokenMeter, api)
     const savingsRatio = sourceMultimodalTokens === 0
       ? -Infinity
       : (sourceMultimodalTokens - opticalTokens) / sourceMultimodalTokens
@@ -609,6 +654,7 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
         input,
         agent,
         signal,
+        originals,
       )
     }
     this.opticalContext.logger.info(
@@ -618,14 +664,14 @@ export class OpticalCompactionEngine extends BasicCompactionEngine {
     )
     const history = await materializeHistoryBlocks(this.opticalContext, visible)
     const preserveData = withoutFramePayloads(result.preserveData)
-    const summary: ContentBlock[] = [{ type: 'text', text: result.summary }, ...history]
+    const summary: ContentBlock[] = [{ type: 'text', text: result.summary }, ...history, ...originals.summary]
 
     this.opticalContext.logger.info(
       `dsh-optical-compaction: ${result.shortSummary ?? `archived ${archive.totalChars} chars`}`,
     )
     return {
       summary,
-      rawOutput: [{ type: 'text', text: PRESERVE_PREFIX + JSON.stringify(preserveData) }],
+      rawOutput: [{ type: 'text', text: PRESERVE_PREFIX + JSON.stringify(preserveData) }, ...originals.rawOutput],
       provider: 'local',
       model: SNAPCOMPACT_MODEL,
     }

@@ -1,15 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
 import z from '@deepseek-ai/schemastery'
 import { assertSubagentMaxDepth } from '@deepseek-ai/dsh-subagent'
-import type {
-  SubagentProvider,
-  SubagentResult,
-  SubagentRun,
-  SubagentStartRequest,
-} from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
@@ -43,12 +37,6 @@ interface ProviderWording {
   guidance: string
 }
 
-interface ForegroundResult {
-  kind: 'foreground'
-  runId: string
-  output: JsonValue[]
-}
-
 export const Config: z<PluginConfig> = z.object({
   provider: z.string().default('fork'),
   toolName: z.string().default('subagent_fork'),
@@ -63,84 +51,6 @@ export const Config: z<PluginConfig> = z.object({
 
 const SECTION_ORDER = 116.5
 const ROUTE_NAME = /^[a-z][a-z0-9_-]{0,31}$/
-
-function outputValueText(values: readonly unknown[]): string {
-  return values
-    .filter((value): value is { type: 'text', text: string } => typeof value === 'object'
-      && value !== null
-      && !Array.isArray(value)
-      && 'type' in value
-      && value.type === 'text'
-      && 'text' in value
-      && typeof value.text === 'string')
-    .map(value => value.text)
-    .join('')
-}
-
-function toJsonValue(value: unknown): JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
-  if (typeof value === 'number') {
-    if (Number.isFinite(value)) return value
-    throw new TypeError('subagent-route-tool: output contained a non-finite number')
-  }
-  if (Array.isArray(value)) return value.map(toJsonValue)
-  if (typeof value === 'object') {
-    const output: Record<string, JsonValue> = {}
-    for (const [key, child] of Object.entries(value)) {
-      if (child !== undefined) output[key] = toJsonValue(child)
-    }
-    return output
-  }
-  throw new TypeError(`subagent-route-tool: output contained unsupported ${typeof value}`)
-}
-
-function stopReasonError(result: SubagentResult): string | undefined {
-  switch (result.stopReason) {
-    case 'completed': return undefined
-    case 'aborted': return 'subagent run was cancelled'
-    case 'error': return 'subagent run failed'
-    case 'max-tokens': return 'subagent run hit its token limit before finishing'
-    case 'refusal': return 'subagent declined the task'
-    default: return `subagent run ended abnormally (${String(result.stopReason)})`
-  }
-}
-
-function withDiagnosticAndPartialText(error: string, result: SubagentResult): string {
-  const diagnostic = result.diagnostic === undefined ? '' : `\nDiagnostic: ${result.diagnostic}`
-  const text = result.output
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('')
-  return `${error}${diagnostic}${text.length === 0 ? '' : `\nPartial output before the run ended:\n${text}`}`
-}
-
-async function settleForegroundRun(run: SubagentRun): Promise<ForegroundResult> {
-  const [execution] = await Promise.allSettled([
-    run.result.then(result => {
-      const error = stopReasonError(result)
-      if (error !== undefined) throw new Error(withDiagnosticAndPartialText(error, result))
-      return {
-        kind: 'foreground' as const,
-        runId: run.id,
-        output: result.output.map(toJsonValue),
-      }
-    }),
-  ])
-  const [disposal] = await Promise.allSettled([
-    Promise.resolve().then(() => run.dispose()),
-  ])
-  if (execution.status === 'rejected') {
-    if (disposal.status === 'rejected') {
-      throw new AggregateError(
-        [execution.reason, disposal.reason],
-        `subagent run failed: ${String(execution.reason)}; dispose failed: ${String(disposal.reason)}`,
-      )
-    }
-    throw execution.reason
-  }
-  if (disposal.status === 'rejected') throw disposal.reason
-  return execution.value
-}
 
 function routeTable(routes: readonly RouteConfig[]): Map<string, ResolvedRoute> {
   const table = new Map<string, ResolvedRoute>()
@@ -199,14 +109,14 @@ export function apply(ctx: Context, config: PluginConfig): void {
     if (!provider.capabilities.depthLimit) {
       throw new Error(`subagent-route-tool: provider "${provider.name}" cannot enforce maxDepth`)
     }
-    if (provider.prepareContinuable === undefined) {
-      throw new Error(`subagent-route-tool: provider "${provider.name}" does not support continuable children`)
+    if (routes.size > 0 && !provider.capabilities.agentOptions) {
+      throw new Error(`subagent-route-tool: provider "${provider.name}" does not support child agentOptions, so routes cannot be offered`)
     }
     const wording = providerWording(provider)
     providerGuidance = wording.guidance
     disposeTool = ctx.tools.register(defineTool({
       name: toolName,
-      description: `${wording.description} Runs in the background by default and returns a durable subagent id. Use route to select an allowlisted child LLM; omit it to inherit the parent route.`,
+      description: `${wording.description} Returns a durable subagent id immediately; the final answer arrives as a completion notification. Use route to select an allowlisted child LLM; omit it to inherit the parent route.`,
       parameters: {
         description: {
           type: 'string',
@@ -223,39 +133,17 @@ export function apply(ctx: Context, config: PluginConfig): void {
           enum: routeNames,
           description: `Child LLM route. Defaults to inherit. Allowed: ${routeNames.join(', ')}.`,
         },
-        run_in_background: {
-          type: 'boolean',
-          description: 'Whether to return a durable subagent id immediately. Defaults to true. Set false only when the next action depends on the result; a foreground run is not continuable.',
-        },
       },
       output: {
         schema: {
-          oneOf: [
-            {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                kind: { type: 'string', required: true, const: 'continuable' },
-                subagentId: { type: 'string', required: true },
-              },
-            },
-            {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                kind: { type: 'string', required: true, const: 'foreground' },
-                runId: { type: 'string', required: true },
-                output: { type: 'array', required: true, items: { type: 'json' } },
-              },
-            },
-          ],
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            kind: { type: 'string', required: true, const: 'activation' },
+            subagentId: { type: 'string', required: true },
+          },
         },
-        render: (_args, value) => [{
-          type: 'text',
-          text: value.kind === 'continuable'
-            ? `started subagent ${value.subagentId}`
-            : outputValueText(value.output),
-        }],
+        render: (_args, value) => [{ type: 'text', text: `started subagent ${value.subagentId}` }],
       },
       isConcurrencySafe: () => true,
       async execute(args, exec) {
@@ -265,26 +153,22 @@ export function apply(ctx: Context, config: PluginConfig): void {
         }
         const agentOptions = resolveRoute(routes, args.route)
         const prompt: ContentBlock[] = [{ type: 'text', text: args.prompt }]
-        const request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'> = {
+        const request: Omit<SubagentStartRequest, 'label' | 'signal'> = {
           prompt,
           parent,
           ...(agentOptions === undefined ? {} : { agentOptions }),
           maxDepth,
         }
-        if (args.run_in_background !== false) {
-          const started = await ctx.subagents.startContinuable({
-            provider: providerName,
-            label: args.description,
-            request,
-            signal: exec.signal,
-          })
-          return { kind: 'continuable' as const, subagentId: started.childId }
-        }
-        return settleForegroundRun(await ctx.subagents.start(providerName, {
-          ...request,
+        // dsh 0.2.1: every delegation is a managed activation; the final answer
+        // reaches the parent as a completion notification (delivery: 'parent').
+        const started = await ctx.subagents.startActivation({
+          provider: providerName,
           label: args.description,
+          request,
           signal: exec.signal,
-        }))
+          delivery: 'parent',
+        })
+        return { kind: 'activation' as const, subagentId: started.childId }
       },
     }))
   }
@@ -308,6 +192,6 @@ export function apply(ctx: Context, config: PluginConfig): void {
     order: SECTION_ORDER,
     text: context => disposeTool === undefined || ctx.tools.get(toolName, context.scope) === undefined
       ? ''
-      : `Use ${toolName} in the background by default. Choose the allowlisted child route that best fits the task; omit route to inherit your current model. ${providerGuidance ?? ''} When the child settles, use send_message with its id for later turns in the same child conversation.`,
+      : `${toolName} returns a child id at once and the child's final answer arrives later as a completion notification; end your turn and wait for it unless other work remains. Choose the allowlisted child route that best fits the task; omit route to inherit your current model. ${providerGuidance ?? ''} After the child settles, send_message with its id continues the same child conversation.`,
   })
 }

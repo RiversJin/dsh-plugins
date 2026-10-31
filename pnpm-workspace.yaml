@@ -1,5 +1,9 @@
 packages:
   - packages/*
+allowBuilds:
+  '@google/genai': false
+  koffi: false
+  protobufjs: false
 minimumReleaseAgeExclude:
   - '@oh-my-pi/pi-natives-darwin-arm64@18.0.10'
   - '@oh-my-pi/pi-natives-darwin-x64@18.0.10'
@@ -7,3 +11,15 @@ minimumReleaseAgeExclude:
   - '@oh-my-pi/pi-natives-linux-x64@18.0.10'
   - '@oh-my-pi/pi-natives-win32-x64@18.0.10'
   - '@oh-my-pi/pi-natives@18.0.10'
+nodeLinker: hoisted
+supportedArchitectures:
+  os:
+    - linux
+  cpu:
+    - x64
+  libc:
+    - glibc
+overrides:
+  '@earendil-works/pi-ai': 1.1.0
+patchedDependencies:
+  '@earendil-works/pi-ai@1.1.0': patches/@earendil-works__pi-ai@1.1.0.patch

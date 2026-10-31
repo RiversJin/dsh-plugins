@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createCanvas } from '@napi-rs/canvas'
 import {
   DIM_OFF,
   DIM_ON,
@@ -30,8 +31,41 @@ import {
   informationFrameLimit,
   ompApiForProvider,
   opticalReducesContext,
+  readOpticalHistory,
   withManualToolResultPruning,
 } from '../lib/engine.js'
+
+test('optical history captures its cut before flush and pages without reading later appends', async () => {
+  const message = seq => ({ id: `m${seq}`, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'fixture' }] })
+  const events = Array.from({ length: 601 }, (_, seq) => ({ type: 'user/message', seq, time: seq + 10, data: message(seq) }))
+  const agent = { session: { id: 'fixture', seq: 600 } }, reads = []
+  let closed = 0
+  const context = {
+    sessions: { flush: async () => { agent.session.seq = 601 } },
+    sessionPersistence: { open: async () => ({ read: async (start, count) => {
+      reads.push([start,count]); return { events: events.slice(start,start+count) }
+    }, close: async () => { closed++ } }) },
+  }
+  const result = await readOpticalHistory(context, [message(599),message(600)], agent)
+  assert.deepEqual(reads, [[0,512],[512,88]])
+  assert.equal(result.timestamps.get('m599'), 609)
+  assert.equal(result.timestamps.has('m600'), false)
+  assert.equal(closed, 1)
+})
+
+for (const failure of ['empty', 'read-error', 'abort']) test(`optical history closes its handle on ${failure}`, async () => {
+  const controller = new AbortController()
+  let closed = 0
+  const context = {
+    sessions: { flush: async () => {} },
+    sessionPersistence: { open: async () => {
+      if (failure === 'abort') controller.abort(new Error('cancelled fixture'))
+      return { read: async () => { if (failure === 'read-error') throw new Error('fixture disk failure'); return { events: [] } }, close: async () => { closed++ } }
+    } },
+  }
+  await assert.rejects(readOpticalHistory(context, [], { session: { id: 'fixture', seq: 1 } }, controller.signal))
+  assert.equal(closed, 1)
+})
 
 function pricedShape(name, frameSize = 128) {
   return {
@@ -465,9 +499,10 @@ test('maps DSH blocks to OMP serialization vocabulary', () => {
     },
     {
       id: 't',
-      role: 'user',
+      role: 'tool',
+      toolCallId: 'c',
       source: { kind: 'tool', callId: 'c' },
-      content: [{ type: 'tool-result', toolCallId: 'c', content: [{ type: 'text', text: 'ok' }] }],
+      content: [{ type: 'text', text: 'ok' }],
     },
   ])
   assert.deepEqual(mapped[0], { role: 'user', content: [{ type: 'text', text: 'hello' }] })
@@ -512,7 +547,7 @@ test('DSH summarize hook saves OMP frames and persists re-render source in rawOu
     },
     tokenMeter: {
       estimateMessage(message) {
-        return message.source.kind === 'plugin' ? 100 : 100_000
+        return message.source.kind === 'plugin:dsh-optical-compaction' ? 100 : 100_000
       },
     },
     attachments: {
@@ -533,13 +568,13 @@ test('DSH summarize hook saves OMP frames and persists re-render source in rawOu
   }
   const config = resolvePluginConfig({ optical: { maxFrames: 4, memoryDecay: { enabled: false } } })
   const engine = Object.create(OpticalCompactionEngine.prototype)
-  engine.opticalContext = context
+  engine.opticalContext = { ...context, sessions: { flush: async () => true }, sessionPersistence: { open: async () => ({ read: async () => ({ events: [] }), close: async () => {} }) } }
   engine.pluginConfig = config
   const agent = {
     options: {},
     session: {
       id: 'session-test',
-      events: [],
+      seq: 0,
       requestHeader() { return { config: { provider: 'kimi-coding', model: 'kimi-k3' } } },
     },
   }
@@ -575,31 +610,33 @@ test('hybrid estimate counts source images with the same context-token rule', as
     },
     tokenMeter: {
       estimateMessage(message) {
-        return message.source.kind === 'plugin' ? 100 : 10
+        return message.source.kind === 'plugin:dsh-optical-compaction' ? 100 : 10
       },
     },
     attachments: {
       imageLimits: { maxImagesPerMessage: 1 },
+      async readImage(ref) { return { ref, data: createCanvas(4096, 4096).toBuffer('image/png') } },
+      imageHostPath() { return '/attachments/source-image.png' },
       async saveImages(inputs) {
         saved += inputs.length
         return inputs.map((input, index) => ({
-          attachmentId: `sha256:hybrid-${index}`,
+          attachmentId: `sha256:hybrid-${saved}-${index}`,
           mediaType: input.mediaType,
           bytes: input.data.length,
-          width: 1568,
-          height: 1568,
+          width: input.name === 'optical-original-preview.png' ? 512 : 1568,
+          height: input.name === 'optical-original-preview.png' ? 512 : 1568,
         }))
       },
     },
   }
   const engine = Object.create(OpticalCompactionEngine.prototype)
-  engine.opticalContext = context
+  engine.opticalContext = { ...context, sessions: { flush: async () => true }, sessionPersistence: { open: async () => ({ read: async () => ({ events: [] }), close: async () => {} }) } }
   engine.pluginConfig = resolvePluginConfig({ optical: { maxFrames: 1, memoryDecay: { enabled: false } } })
   const agent = {
     options: {},
     session: {
       id: 'session-source-image',
-      events: [],
+      seq: 0,
       requestHeader() { return { config: { provider: 'kimi-coding', model: 'kimi-k3' } } },
     },
   }
@@ -626,7 +663,7 @@ test('hybrid estimate counts source images with the same context-token rule', as
 
   const result = await engine.summarize(input, agent)
   assert.equal(result.provider, 'local')
-  assert.equal(saved, 1)
+  assert.equal(saved, 2)
 })
 
 test('DSH summarize hook falls back when optical no longer reduces model context', async () => {
@@ -649,7 +686,7 @@ test('DSH summarize hook falls back when optical no longer reduces model context
     },
     tokenMeter: {
       estimateMessage(message) {
-        return message.source.kind === 'plugin' ? 10 : 1_000
+        return message.source.kind === 'plugin:dsh-optical-compaction' ? 10 : 1_000
       },
     },
     attachments: {
@@ -666,13 +703,13 @@ test('DSH summarize hook falls back when optical no longer reduces model context
     optical: { maxFrames: 4, memoryDecay: { enabled: false } },
   })
   const engine = Object.create(OpticalCompactionEngine.prototype)
-  engine.opticalContext = context
+  engine.opticalContext = { ...context, sessions: { flush: async () => true }, sessionPersistence: { open: async () => ({ read: async () => ({ events: [] }), close: async () => {} }) } }
   engine.pluginConfig = config
   const agent = {
     options: {},
     session: {
       id: 'session-fallback',
-      events: [],
+      seq: 0,
       requestHeader() { return { config: { provider: 'kimi-coding', model: 'kimi-k3' } } },
     },
   }

@@ -3,7 +3,10 @@ import { test } from 'node:test'
 import {
   apply,
   contextMilestone,
+  groupedRoute,
+  groupedContextWindow,
   latestMilestone,
+  milestoneProjection,
   name,
   renderModelSwitchNotice,
   renderNotice,
@@ -21,7 +24,7 @@ function noticeEvent(seq, milestone, contextWindow = 1000) {
     type: 'user/message',
     data: {
       content: [{ type: 'text', text: rendered.text }],
-      source: { kind: 'plugin', plugin: name, form: 'notice', summary: rendered.summary },
+      source: { kind: 'plugin:dsh-context-milestones', form: 'notice', summary: rendered.summary },
     },
   }
 }
@@ -31,6 +34,7 @@ function fixture({
   contextWindow = 1000,
   pendingTokens = 2,
   previousRoute,
+  modelGroups = [],
   selectedRoute = { provider: 'test', model: 'test' },
   events = [],
   nodes = events.filter(event => event.type === 'user/message').map(event => ({ seq: event.seq, tokens: 1 })),
@@ -41,9 +45,13 @@ function fixture({
   const session = {
     events,
     requestHeader: () => previousRoute === undefined ? undefined : { config: previousRoute },
-    requestContext: () => ({ provider: 'test', model: 'test', contextWindow }),
+    requestContext: () => ({ ...(previousRoute ?? { provider: 'test', model: 'test' }), contextWindow }),
   }
   const ctx = {
+    sessionProjections: {
+      register: definition => assert.equal(definition, milestoneProjection),
+      stateOf: () => events.reduce(milestoneProjection.apply, { notices: [] }),
+    },
     logger: { info: () => {} },
     tokenMeter: {
       measure: value => {
@@ -63,7 +71,7 @@ function fixture({
       return () => {}
     },
   }
-  apply(ctx, { stepPercent: 5 })
+  apply(ctx, { stepPercent: 5, modelGroups })
   return {
     options,
     async run({ step = 1, aborted = false, messages = [{ id: 'pending' }] } = {}) {
@@ -95,8 +103,8 @@ test('pending messages can cross a threshold and produce one plugin notice', asy
   assert.deepEqual(f.options, { prepend: true })
   const decision = await f.run()
   assert.equal(decision.messages.length, 2)
-  assert.equal(decision.messages[0].source.kind, 'plugin')
-  assert.equal(decision.messages[0].source.plugin, name)
+  assert.equal(decision.messages[0].source.kind, 'plugin:dsh-context-milestones')
+  assert.equal(decision.messages[0].source.kind, 'plugin:dsh-context-milestones')
   assert.equal(decision.messages[0].source.form, 'notice')
   assert.match(decision.messages[0].content[0].text, /^\[Framework-injected context\]/u)
   assert.match(decision.messages[0].content[0].text, /5\.1% used/u)
@@ -163,7 +171,7 @@ test('only first-step active requests are considered', async () => {
 test('latest milestone ignores shadowed notices', () => {
   const old = noticeEvent(0, 5)
   const current = noticeEvent(1, 10)
-  assert.deepEqual(latestMilestone({ events: [old, current] }, new Set([1])), {
+  assert.deepEqual(latestMilestone([old, current].reduce(milestoneProjection.apply, { notices: [] }), new Set([1])), {
     contextWindow: 1000,
     milestone: 10,
   })
@@ -179,7 +187,7 @@ test('a real provider/model change emits one framework model-switch notice', asy
     selectedRoute,
   }).run()
   assert.equal(decision.messages.length, 2)
-  assert.equal(decision.messages[0].source.plugin, name)
+  assert.equal(decision.messages[0].source.kind, 'plugin:dsh-context-milestones')
   assert.match(decision.messages[0].content[0].text, /^\[Framework-injected model switch\]/u)
   assert.match(decision.messages[0].content[0].text, /kimi-coding\/k3/u)
   assert.match(decision.messages[0].content[0].text, /qwen38-local\/qwen-test/u)
@@ -208,4 +216,18 @@ test('model-switch notice wording marks runtime continuity explicitly', () => {
   )
   assert.equal(notice.summary, 'Model switched: old/a -> new/b')
   assert.match(notice.text, /does not start a new conversation or change the active persona/u)
+})
+
+const kimiGroups = [{ provider: 'kimi-coding', models: ['k3', 'k3-256k'], contextWindow: 1048576 }]
+test('equivalent K3 tiers share one capacity and emit no switch notice in either direction', async () => {
+  for (const [from, to] of [['k3', 'k3-256k'], ['k3-256k', 'k3']]) {
+    const previousRoute = { provider: 'kimi-coding', model: from }, selectedRoute = { provider: 'kimi-coding', model: to }
+    const decision = await fixture({ totalTokens: 150000, contextWindow: 262144, previousRoute, selectedRoute, modelGroups: kimiGroups }).run()
+    const notices = decision.messages.filter(message => message.source?.kind === 'plugin:dsh-context-milestones')
+    assert.equal(notices.length, 1)
+    assert.match(notices[0].content[0].text, /1048576 tokens.*crossed 10%/u)
+    assert.equal(groupedRoute(previousRoute, kimiGroups).model, 'k3')
+    assert.equal(groupedContextWindow(previousRoute, 262144, kimiGroups), 1048576)
+  }
+  assert.equal(groupedRoute({ provider: 'other', model: 'k3-256k' }, kimiGroups).model, 'k3-256k')
 })

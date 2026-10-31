@@ -1,44 +1,30 @@
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client';
+import type {} from '@deepseek-ai/dsh-client-ui-session/client';
 import { useEffect } from 'react';
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
-import type {
-  SessionListState,
-  WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client';
 import { shortSessionId } from '../session-id.js';
-import {
-  visibleSidebarSessionIds,
-  type SidebarView,
-} from '../sidebar-order.js';
 import { copyText } from './session-id.js';
 
 export type SidebarSessionIdsProps = PropsRuntime<'sidebar.footer.action'>;
 
-const VIEW_STORAGE_KEY = 'dsh.workspace.view.v5';
 const SUFFIX_ATTR = 'data-dsh-session-id-suffix';
-
-function readView(): SidebarView {
-  try {
-    return JSON.parse(localStorage.getItem(VIEW_STORAGE_KEY) ?? '{}') as SidebarView;
-  } catch {
-    return {};
-  }
-}
 
 function removeSuffixes(root: ParentNode = document): void {
   root.querySelectorAll(`[${SUFFIX_ATTR}]`).forEach((node) => node.remove());
 }
 
-function titleElement(row: Element, title: string): HTMLSpanElement | undefined {
+function titleElement(row: Element): HTMLSpanElement | undefined {
   const spans = Array.from(row.children).filter(
     (node): node is HTMLSpanElement => node instanceof HTMLSpanElement,
   );
-  return spans.find((span) => span.textContent === title)
-    ?? spans.find((span) => getComputedStyle(span).flexGrow === '1');
+  return spans.find((span) => getComputedStyle(span).flexGrow === '1');
 }
 
-function appendSuffix(row: Element, sessionId: string, title: string): void {
-  if (row.querySelector(`[${SUFFIX_ATTR}]`) !== null) return;
-  const titleNode = titleElement(row, title);
+function appendSuffix(row: Element, sessionId: string): void {
+  const existing = row.querySelector(`[${SUFFIX_ATTR}]`);
+  if (existing?.getAttribute(SUFFIX_ATTR) === sessionId) return;
+  existing?.remove();
+  const titleNode = titleElement(row);
   if (titleNode === undefined) return;
 
   const suffix = document.createElement('button');
@@ -62,38 +48,25 @@ function appendSuffix(row: Element, sessionId: string, title: string): void {
       }, 1400);
     });
   });
-  titleNode.append(' ', suffix);
+  // The native title clips overflowing content and scrolls on hover. Keep the
+  // copy button in its own flex cell so long titles cannot hide its hit target.
+  titleNode.after(suffix);
 }
 
-function decorateRows(list: SessionListState, workspaces: WorkspaceListState): void {
+function decorateRows(list: SessionListState): void {
   const tree = document.querySelector('[role="tree"]');
   if (tree === null) return;
-  const rows = Array.from(tree.querySelectorAll('[role="treeitem"][aria-selected]'));
-  const ids = visibleSidebarSessionIds(
-    list,
-    workspaces.items,
-    workspaces.archivedSessionIds,
-    readView(),
-  );
-
-  // A search result, a transition, or a future sidebar layout can change the
-  // row set. Fail closed instead of ever putting the wrong ID beside a title.
-  if (rows.length !== ids.length) return;
-  rows.forEach((row, index) => {
-    const id = ids[index];
-    const session = id === undefined
-      ? undefined
-      : list.byId[id as keyof typeof list.byId];
-    if (id !== undefined && session !== undefined && !session.blank) {
-      appendSuffix(row, id, session.displayTitle);
-    }
-  });
+  // New host rows expose their identity directly, including search and reordered rows.
+  for (const row of tree.querySelectorAll<HTMLElement>('[role="treeitem"][data-row-key^="session:"]')) {
+    const id = row.dataset.rowKey?.slice('session:'.length);
+    const session = id === undefined ? undefined : list.byId[id as keyof typeof list.byId];
+    if (id && session !== undefined && !session.blank) appendSuffix(row, id);
+    else removeSuffixes(row);
+  }
 }
 
-export function SidebarSessionIds({ useSessions, useWorkspaces, wide }: SidebarSessionIdsProps): null {
-  const list = useSessions((state) => state);
-  const workspaces = useWorkspaces((state) => state);
-
+export function SidebarSessionIds({ wide, useSessions }: SidebarSessionIdsProps): null {
+  const list = useSessions((state: SessionListState) => state);
   useEffect(() => {
     if (!wide) {
       removeSuffixes();
@@ -105,20 +78,23 @@ export function SidebarSessionIds({ useSessions, useWorkspaces, wide }: SidebarS
       if (frame !== undefined) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = undefined;
-        decorateRows(list, workspaces);
+        decorateRows(list);
       });
     };
     decorate();
 
-    const observer = new MutationObserver(decorate);
+    const observer = new MutationObserver(records => {
+      if (records.some(record => record.target instanceof Element && record.target.closest('[role="tree"]') !== null
+        || [...record.addedNodes].some(node => node instanceof Element && (node.matches('[role="tree"]') || node.querySelector('[role="tree"]') !== null)))) decorate();
+    });
     const tree = document.querySelector('[role="tree"]');
-    if (tree !== null) observer.observe(tree, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-row-key'] });
     return () => {
       observer.disconnect();
       if (frame !== undefined) window.cancelAnimationFrame(frame);
       removeSuffixes(tree ?? document);
     };
-  }, [list, wide, workspaces]);
+  }, [list, wide]);
 
   return null;
 }

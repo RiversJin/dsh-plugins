@@ -1,9 +1,9 @@
-import type {
-  ClientContext,
-  ConversationNode,
-  ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client';
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client';
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
+import type { ConversationNode } from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { LegacyConversationSlice, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client';
+import type {} from '@deepseek-ai/dsh-client-ui-session/client';
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
@@ -49,8 +49,7 @@ function installStyle(): () => void {
     .dsh-retry__removed-marker {
       display: none;
     }
-    [data-chat-flow-kind="assistant-step"][data-dsh-retry-removed="true"],
-    [data-chat-flow-kind="turn-tail"][data-dsh-retry-removed="true"] {
+    [data-dsh-retry-removed="true"] {
       display: none;
     }
   `;
@@ -58,7 +57,7 @@ function installStyle(): () => void {
   return () => style.remove();
 }
 
-function latestAssistantId(snapshot: ConversationSnapshot): string | undefined {
+function latestAssistantId(snapshot: LegacyConversationSlice): string | undefined {
   for (let index = snapshot.nodes.length - 1; index >= 0; index -= 1) {
     const node = snapshot.nodes[index];
     if (node?.kind === 'assistant' && node.messageId !== undefined) {
@@ -85,23 +84,12 @@ function isSuperseded(nodes: readonly ConversationNode[], messageId: string): bo
   return false;
 }
 
-function priorAssistantRow(marker: HTMLElement): HTMLElement | undefined {
-  const tail = marker.closest<HTMLElement>('[data-chat-flow-kind="turn-tail"]');
-  let row = tail?.previousElementSibling;
-  while (row instanceof HTMLElement) {
-    if (row.dataset.chatFlowKind === 'assistant-step') return row;
-    if (row.dataset.chatFlowKind === 'turn-tail') return undefined;
-    row = row.previousElementSibling;
-  }
-  return undefined;
-}
-
 function retryAction(ctx: ClientContext) {
-  return function RetryAction({ messageId, sessionId, useSession }: RetryActionProps) {
-    const latest = useSession(snapshot => latestAssistantId(snapshot));
-    const superseded = useSession(snapshot => isSuperseded(snapshot.nodes, messageId));
-    const running = useSession(snapshot => snapshot.running);
-    const removed = useSession(snapshot => snapshot.removed);
+  return function RetryAction({ messageId, sessionId, useSession, useChat }: RetryActionProps) {
+    const latest = useChat((snapshot: ChatSnapshot) => latestAssistantId(snapshot.legacy));
+    const superseded = useChat((snapshot: ChatSnapshot) => isSuperseded(snapshot.legacy.nodes, messageId));
+    const running = useSession((snapshot: SessionSnapshot) => snapshot.running);
+    const removed = useSession((snapshot: SessionSnapshot) => snapshot.removed);
     const [pending, setPending] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
     const markerRef = useRef<HTMLSpanElement>(null);
@@ -110,13 +98,23 @@ function retryAction(ctx: ClientContext) {
       const marker = markerRef.current;
       if (!superseded || marker === null) return undefined;
       const tail = marker.closest<HTMLElement>('[data-chat-flow-kind="turn-tail"]');
-      const row = priorAssistantRow(marker);
-      if (tail === null || row === undefined) return undefined;
-      tail.dataset.dshRetryRemoved = 'true';
-      row.dataset.dshRetryRemoved = 'true';
+      const turn = tail?.dataset.chatTurn;
+      const flow = tail?.parentElement;
+      if (!turn || !flow) return undefined;
+      const affected = new Set<HTMLElement>();
+      const hide = () => {
+        for (const row of flow.querySelectorAll<HTMLElement>('[data-chat-turn]')) {
+          if (row.dataset.chatTurn !== turn) continue;
+          row.dataset.dshRetryRemoved = 'true';
+          affected.add(row);
+        }
+      };
+      hide();
+      const observer = new MutationObserver(hide);
+      observer.observe(flow, { childList: true, subtree: true });
       return () => {
-        delete tail.dataset.dshRetryRemoved;
-        delete row.dataset.dshRetryRemoved;
+        observer.disconnect();
+        for (const row of affected) delete row.dataset.dshRetryRemoved;
       };
     }, [superseded]);
 
@@ -148,7 +146,7 @@ function retryAction(ctx: ClientContext) {
       );
     }
     if (latest !== messageId) return null;
-    const label = failure ?? '重新生成上一轮回答';
+    const label = failure ?? '重试本轮回答';
     return (
       <button
         type="button"

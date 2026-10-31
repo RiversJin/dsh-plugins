@@ -2,5 +2,5 @@
 # Mount it explicitly inside an agent preset's isolated `compaction` realm.
 - insert:
     - id: dsh-optical-compaction
-      name: dsh-optical-compaction
+      name: '@riversjin/dsh-optical-compaction'
       disabled: true

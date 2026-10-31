@@ -9,6 +9,7 @@ The DSH adapter is deliberately narrow:
 - DSH content blocks are translated into OMP's message vocabulary.
 - OMP PNG frames are committed through `ctx.attachments` and placed in the normal DSH compaction checkpoint.
 - OMP's kept archive source is stored in the checkpoint's durable, non-model-facing `rawOutput`, then unfolded and re-rendered on the next Snapcompact pass.
+- Original conversational images receive separate previews with a maximum edge of 512 pixels. Each preview retains the original attachment reference, source message/image position, and available original host path in an independent durable sidecar.
 - OMP's platform N-API package is loaded directly under Node. The `hybrid-fusion12-bw` variant keeps OMP's Latin bitmap layer and replaces only East Asian Wide/Fullwidth cells with the bundled Fusion Pixel 12px font.
 - OMP's persisted `U+2588` newline marker remains unchanged for replay compatibility, but DSH draws it as a lightweight `↵` inside PNG frames instead of a solid black cell. Long conversational archives contain enough line breaks that the upstream full-block rendering becomes distracting visual noise.
 
@@ -24,7 +25,11 @@ The model's source-token estimate first chooses how many pages the pass may use:
 
 Decay is lazy: no timer rewrites an idle session. DSH event timestamps, normalized source segments, and cumulative pre-visual information tokens are persisted in the checkpoint's non-model-facing `rawOutput`; whenever that session compacts again, all retained optical pages are re-rendered at their then-current age. The cumulative counter prevents an already-compressed request from being mistaken for a genuinely smaller history and collapsing 8 pages to 2 and then 1 merely because compaction ran again. Legacy archives derive this counter once from their readable and retired character counts. Disabling `memoryDecay` restores OMP's original plain-text edges and HQ/LQ/HQ foveated middle.
 
-The active route must declare image input. A text-only route uses the configured semantic fallback. Before committing frames, the adapter estimates the model-context occupancy of both the selected source and the complete optical checkpoint with OMP's provider-aware, height-aware image-token rules plus DSH's text estimator. Any strictly smaller optical checkpoint is kept; if it is equal to or larger than the source, optical compaction has stopped freeing context and the adapter uses the same semantic fallback without saving the candidate frames. This is a context-capacity guard, not a price optimizer. DSH's basic engine still performs its final local shrink check. Original conversational image blocks are not copied into the archived transcript, matching OMP serialization; images in the recent retained tail remain untouched.
+The active route must declare image input. A text-only route uses the configured semantic fallback. Before committing frames, the adapter estimates the model-context occupancy of both the selected source and the complete optical checkpoint with OMP's provider-aware, height-aware image-token rules plus DSH's text estimator. The complete candidate includes all original-image previews and their path labels. Offloaded source images contribute their request-visible text placeholders. Any strictly smaller optical checkpoint is kept; if it is equal to or larger than the source, optical compaction has stopped freeing context and the adapter uses the same semantic fallback without saving the candidate transcript frames. This is a context-capacity guard, not a price optimizer. DSH's basic engine still performs its final local shrink check.
+
+Original conversational images are read from their immutable attachment references, including occurrences already marked `offloaded`. A separate PNG preview preserves aspect ratio, never enlarges a small image, and limits its longest edge to 512 pixels. The visible checkpoint pairs each preview with its original attachment ID, available original host path, and source message/image position. The transcript also receives that path label at the original image position. Original attachment bytes remain unchanged. These previews are separate from the dense transcript pages and do not consume their eight-page Kimi limit or transcript-frame byte budget; they do contribute to total context estimates and the provider's overall request limits. DSH admission is performed one preview at a time.
+
+The `dsh-optical-original-images-v1` raw-output sidecar persists both original and preview references independently of the transcript archive. Later compaction reuses those preview references without shrinking them again, and excludes generated checkpoint pages from original-image collection. Semantic fallback receives the previews in place of original image blocks and carries the same visible previews and sidecar into its checkpoint. Images in the recent retained tail remain untouched.
 
 Manual `/compact` first runs the configured replay-safe `toolResultPruner` inside the agent's idle maintenance lock, persists any replacements, and only then selects the optical compaction range. Automatic pressure and overflow paths already perform the same pre-pass in `dsh-compaction-basic`. The optical serializer's smaller per-result, per-argument, and per-call caps remain a second archive-only boundary; they do not rewrite recent live history.
 
@@ -40,7 +45,7 @@ Both are explicit host limitations, not alternate compression policy. Adding eit
 ## Install
 
 ```sh
-dsh plugin --profile web add file:/home/rivers/projects/dsh-plugins/packages/dsh-optical-compaction
+dsh plugin --profile web add file:./riversjin-dsh-optical-compaction-0.3.4.tgz
 ```
 
 The bundle row is disabled by default. Mount the plugin explicitly inside an agent preset's isolated `compaction` realm:

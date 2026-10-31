@@ -16,13 +16,12 @@ function fixture({
   maxDepth = 1,
 } = {}) {
   let definition
-  let continuable
-  let foreground
+  let activation
   const promptSections = []
   const provider = {
     name: providerName,
     inheritsParentContext,
-    capabilities: { depthLimit: true },
+    capabilities: { depthLimit: true, agentOptions: true },
     prepareContinuable: async () => ({}),
   }
   const ctx = {
@@ -38,18 +37,12 @@ function fixture({
     },
     subagents: {
       getProvider: name => name === providerName ? provider : undefined,
-      async startContinuable(value) {
-        continuable = value
-        return { childId: 'child-qwen', messageId: 'message-1' }
-      },
-      async start(name, value) {
-        foreground = { name, value }
+      async startActivation(spec) {
+        activation = spec
         return {
-          id: 'run-1',
-          result: Promise.resolve({
-            stopReason: 'completed',
-            output: [{ type: 'text', text: 'done' }],
-          }),
+          childId: 'child-qwen',
+          messageId: 'message-1',
+          result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'done' }] }),
           dispose: async () => {},
         }
       },
@@ -65,8 +58,7 @@ function fixture({
   })
   return {
     get definition() { return definition },
-    get continuable() { return continuable },
-    get foreground() { return foreground },
+    get activation() { return activation },
     promptSections,
   }
 }
@@ -87,28 +79,29 @@ test('tool schema adds one allowlisted route field without adding another tool',
     'description',
     'prompt',
     'route',
-    'run_in_background',
   ])
   assert.deepEqual(properties.route.enum, ['inherit', 'qwen'])
   assert.equal(f.promptSections.length, 1)
 })
 
-test('qwen route maps to fixed agentOptions on a continuable fork', async () => {
+test('qwen route maps to fixed agentOptions on a parent-delivered fork activation', async () => {
   const f = fixture()
   const parent = { id: 'parent' }
   const result = await f.definition.execute(
     {
-      description: 'ask qwen qiyue',
+      description: 'ask qwen helper',
       prompt: 'Continue this conversation.',
       route: 'qwen',
     },
     { agent: parent, signal: new AbortController().signal },
   )
-  assert.deepEqual(result, { kind: 'continuable', subagentId: 'child-qwen' })
-  assert.equal(f.continuable.provider, 'fork')
-  assert.equal(f.continuable.request.parent, parent)
-  assert.equal(f.continuable.request.maxDepth, 1)
-  assert.deepEqual(f.continuable.request.agentOptions, {
+  assert.deepEqual(result, { kind: 'activation', subagentId: 'child-qwen' })
+  assert.equal(f.activation.provider, 'fork')
+  assert.equal(f.activation.delivery, 'parent')
+  assert.equal(f.activation.label, 'ask qwen helper')
+  assert.equal(f.activation.request.parent, parent)
+  assert.equal(f.activation.request.maxDepth, 1)
+  assert.deepEqual(f.activation.request.agentOptions, {
     provider: qwen.provider,
     model: qwen.model,
     maxTokens: qwen.maxTokens,
@@ -136,33 +129,38 @@ test('spawn route stays fresh while preserving preset and memory guidance', asyn
     },
     { agent: {}, signal: new AbortController().signal },
   )
-  assert.equal(f.continuable.provider, 'spawn')
-  assert.equal(f.continuable.request.maxDepth, 3)
-  assert.deepEqual(f.continuable.request.agentOptions, {
+  assert.equal(f.activation.provider, 'spawn')
+  assert.equal(f.activation.request.maxDepth, 3)
+  assert.deepEqual(f.activation.request.agentOptions, {
     provider: qwen.provider,
     model: qwen.model,
     maxTokens: qwen.maxTokens,
   })
 })
 
-test('inherit route omits agentOptions and foreground preserves official result shape', async () => {
+test('inherit route omits agentOptions and every delegation is an activation', async () => {
   const f = fixture()
   const result = await f.definition.execute(
     {
       description: 'inherit route',
       prompt: 'Review this.',
       route: 'inherit',
-      run_in_background: false,
     },
     { agent: {}, signal: new AbortController().signal },
   )
-  assert.deepEqual(result, {
-    kind: 'foreground',
-    runId: 'run-1',
-    output: [{ type: 'text', text: 'done' }],
-  })
-  assert.equal(f.foreground.name, 'fork')
-  assert.equal('agentOptions' in f.foreground.value, false)
+  assert.deepEqual(result, { kind: 'activation', subagentId: 'child-qwen' })
+  assert.equal(f.activation.provider, 'fork')
+  assert.equal('agentOptions' in f.activation.request, false)
+})
+
+test('a provider without child agentOptions cannot offer routes', () => {
+  assert.throws(() => apply({
+    logger: { info: () => {} },
+    tools: { register: () => () => {}, get: () => undefined },
+    subagents: { getProvider: () => ({ name: 'fork', inheritsParentContext: true, capabilities: { depthLimit: true, agentOptions: false } }) },
+    systemPrompt: { section: () => () => {} },
+    on: () => () => {},
+  }, { provider: 'fork', toolName: 'subagent_fork', maxDepth: 1, routes: [qwen] }), /does not support child agentOptions/)
 })
 
 test('invalid and duplicate route names fail closed at mount', () => {

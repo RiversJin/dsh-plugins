@@ -3,7 +3,6 @@ import { defineConfig } from 'tsdown';
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
-  '@deepseek-ai/dsh-client-runtime/client',
   '@deepseek-ai/dsh-client-ui-conversation/client',
   '@deepseek-ai/dsh-client-ui-slots',
 ] as const;

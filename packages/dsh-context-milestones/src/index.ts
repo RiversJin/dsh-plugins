@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { z as stateSchema } from 'zod'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-compaction'
@@ -9,11 +11,39 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-token-meter'
 
 export const name = 'dsh-context-milestones'
-export const inject = ['agents', 'tokenMeter']
+export const inject = ['agents', 'tokenMeter', 'sessionProjections']
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'plugin:dsh-context-milestones': {
+      kind: 'plugin:dsh-context-milestones'
+      form: 'notice'
+      summary: string
+    }
+  }
+}
+
+export interface MilestoneState {
+  notices: { seq: number, contextWindow: number, milestone: number }[]
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    contextMilestones: MilestoneState
+  }
+}
 
 export interface PluginConfig {
   stepPercent?: number
   modelSwitchNotice?: boolean
+  /** Equivalent automatic tiers share one model-facing identity and capacity. */
+  modelGroups?: ModelGroup[]
+}
+
+export interface ModelGroup {
+  provider: string
+  models: string[]
+  contextWindow?: number
 }
 
 export interface ModelRoute {
@@ -39,6 +69,11 @@ export interface RenderNoticeInput extends ContextMilestone {
 export const Config: z<PluginConfig> = z.object({
   stepPercent: z.natural().min(1).max(100).default(5),
   modelSwitchNotice: z.boolean().default(true),
+  modelGroups: z.array(z.object({
+    provider: z.string().required(),
+    models: z.array(z.string()).required(),
+    contextWindow: z.natural().min(1),
+  })),
 })
 
 const NOTICE_PATTERN = /^\[Framework-injected context\] [\d.]+% used \(\d+\/(\d+) tokens\); crossed (\d+)%\.$/u
@@ -54,7 +89,7 @@ function successfulCompaction(event: SessionEvent): boolean {
 function parseNotice(event: SessionEvent): { contextWindow: number, milestone: number } | undefined {
   if (event.type !== 'user/message') return undefined
   const source = event.data.source
-  if (source.kind !== 'plugin' || source.plugin !== name) return undefined
+  if (source.kind !== 'plugin:dsh-context-milestones') return undefined
   const block = event.data.content[0]
   if (block?.type !== 'text') return undefined
   const match = NOTICE_PATTERN.exec(block.text)
@@ -70,25 +105,30 @@ function parseNotice(event: SessionEvent): { contextWindow: number, milestone: n
  * Successful summarizing compaction begins a new cycle even when it retained
  * the old notice among its recent surface nodes.
  */
+export const milestoneProjection: ProjectionDefinition<'contextMilestones'> = {
+  key: 'contextMilestones',
+  stateVersion: 1,
+  stateSchema: stateSchema.object({ notices: stateSchema.array(stateSchema.object({
+    seq: stateSchema.number().int().nonnegative(),
+    contextWindow: stateSchema.number().int().positive(),
+    milestone: stateSchema.number().int(),
+  })) }),
+  init: () => ({ notices: [] }),
+  apply(state, event) {
+    if (successfulCompaction(event)) return { notices: [] }
+    const notice = parseNotice(event)
+    return notice === undefined ? state : { notices: [...state.notices, { seq: event.seq, ...notice }] }
+  },
+}
+
 export function latestMilestone(
-  session: Pick<Session, 'events'>,
+  state: MilestoneState,
   visibleNodes: ReadonlySet<number>,
 ): { contextWindow: number, milestone: number } | undefined {
-  const events = session.events
-  let cycleStart = -1
-  for (let index = events.length - 1; index >= 0; index--) {
-    const event = events[index]
-    if (event !== undefined && successfulCompaction(event)) {
-      cycleStart = index
-      break
-    }
-  }
-  for (let index = events.length - 1; index > cycleStart; index--) {
-    const event = events[index]
-    if (event === undefined) continue
-    if (!visibleNodes.has(event.seq)) continue
-    const state = parseNotice(event)
-    if (state !== undefined) return state
+  for (let index = state.notices.length - 1; index >= 0; index--) {
+    const notice = state.notices[index]
+    if (notice === undefined || !visibleNodes.has(notice.seq)) continue
+    return { contextWindow: notice.contextWindow, milestone: notice.milestone }
   }
   return undefined
 }
@@ -129,6 +169,16 @@ function sameRoute(left: ModelRoute, right: ModelRoute): boolean {
   return left.provider === right.provider && left.model === right.model
 }
 
+export function groupedRoute(route: ModelRoute, groups: readonly ModelGroup[]): ModelRoute {
+  const group = groups.find(row => row.provider === route.provider && row.models.includes(route.model))
+  return group?.models[0] === undefined ? route : { provider: route.provider, model: group.models[0] }
+}
+
+export function groupedContextWindow(route: ModelRoute | undefined, capacity: number | undefined, groups: readonly ModelGroup[]): number | undefined {
+  if (route === undefined) return capacity
+  return groups.find(row => row.provider === route.provider && row.models.includes(route.model))?.contextWindow ?? capacity
+}
+
 export function renderModelSwitchNotice(previous: ModelRoute, current: ModelRoute): Notice {
   const from = `${previous.provider}/${previous.model}`
   const to = `${current.provider}/${current.model}`
@@ -142,8 +192,7 @@ function pluginNotice(notice: Notice): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text: notice.text }],
     source: {
-      kind: 'plugin',
-      plugin: name,
+      kind: 'plugin:dsh-context-milestones',
       form: 'notice',
       summary: notice.summary,
     },
@@ -151,8 +200,10 @@ function pluginNotice(notice: Notice): UserMessage {
 }
 
 export function apply(ctx: Context, config: PluginConfig): void {
+  ctx.sessionProjections.register(milestoneProjection)
   const stepPercent = config.stepPercent ?? 5
   const modelSwitchNotice = config.modelSwitchNotice ?? true
+  const modelGroups = config.modelGroups ?? []
   const selectedRoutes = new WeakMap<Session, ModelRoute>()
 
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
@@ -172,7 +223,7 @@ export function apply(ctx: Context, config: PluginConfig): void {
       const selected = selectedRoutes.get(agent.session)
       const previousConfig = agent.session.requestHeader()?.config
       const previous = routeOf(previousConfig)
-      if (selected !== undefined && previous !== undefined && !sameRoute(previous, selected)) {
+      if (selected !== undefined && previous !== undefined && !sameRoute(groupedRoute(previous, modelGroups), groupedRoute(selected, modelGroups))) {
         notices.push(pluginNotice(renderModelSwitchNotice(previous, selected)))
       }
     }
@@ -182,7 +233,7 @@ export function apply(ctx: Context, config: PluginConfig): void {
     }
 
     const requestContext = agent.session.requestContext()
-    const contextWindow = requestContext?.contextWindow
+    const contextWindow = groupedContextWindow(routeOf(requestContext), requestContext?.contextWindow, modelGroups)
     if (!validContextWindow(contextWindow)) {
       return notices.length === 0 ? decision : { kind: 'enter', messages: [...notices, ...decision.messages] }
     }
@@ -198,7 +249,9 @@ export function apply(ctx: Context, config: PluginConfig): void {
       return notices.length === 0 ? decision : { kind: 'enter', messages: [...notices, ...decision.messages] }
     }
 
-    const previous = latestMilestone(agent.session, new Set(measurement.nodes.map(node => node.seq)))
+    const state = ctx.sessionProjections.stateOf(agent.session, 'contextMilestones')
+    if (state === undefined) throw new Error('contextMilestones projection is unavailable')
+    const previous = latestMilestone(state, new Set(measurement.nodes.map(node => node.seq)))
     if (previous?.contextWindow === contextWindow && previous.milestone >= current.milestone) {
       return notices.length === 0 ? decision : { kind: 'enter', messages: [...notices, ...decision.messages] }
     }

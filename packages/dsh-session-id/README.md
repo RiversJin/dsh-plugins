@@ -5,7 +5,7 @@ eight-character ID to its sidebar title, for example `cur1 (7e13b62c)`. Click
 the parenthesized ID to copy the complete session ID.
 
 The short form removes DSH's internal `session-` prefix and matches the ID form
-used by the Qiyue QQ connector.
+used by the QQ connector.
 
 ## Development
 
@@ -17,5 +17,5 @@ pnpm test
 Install it into a profile with:
 
 ```sh
-dsh plugin --profile web add file:/home/rivers/projects/dsh-session-id
+dsh plugin --profile web add file:./riversjin-dsh-session-id-0.2.0.tgz
 ```

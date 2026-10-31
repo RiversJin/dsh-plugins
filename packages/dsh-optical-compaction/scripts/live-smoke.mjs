@@ -97,7 +97,7 @@ let archived = false
 try {
   await unary('session.create', {
     sessionId,
-    cwd: '/home/rivers/projects/dsh-optical-compaction',
+    cwd: process.cwd(),
     agentPreset,
   })
   await unary('session.selectModel', {
