@@ -1,0 +1,49 @@
+{
+  "name": "dsh-profile-companion",
+  "private": true,
+  "dependencies": {
+    "@riversjin/dsh-context-cleanup": "file:.upgrade-packages/riversjin-dsh-context-cleanup-0.1.1.tgz",
+    "@riversjin/dsh-context-milestones": "file:.upgrade-packages/riversjin-dsh-context-milestones-0.2.2.tgz",
+    "@riversjin/dsh-dream-context": "file:.upgrade-packages/riversjin-dsh-dream-context-0.2.6.tgz",
+    "@riversjin/dsh-http-gzip": "file:.upgrade-packages/riversjin-dsh-http-gzip-0.3.1.tgz",
+    "@riversjin/dsh-kimi-auto": "file:.upgrade-packages/riversjin-dsh-kimi-auto-0.1.2.tgz",
+    "@riversjin/dsh-optical-compaction": "file:.upgrade-packages/riversjin-dsh-optical-compaction-0.3.4.tgz",
+    "@riversjin/dsh-projection-cache": "file:.upgrade-packages/riversjin-dsh-projection-cache-0.1.0.tgz",
+    "@riversjin/dsh-retry": "file:.upgrade-packages/riversjin-dsh-retry-0.2.0.tgz",
+    "@riversjin/dsh-session-id": "file:.upgrade-packages/riversjin-dsh-session-id-0.2.0.tgz",
+    "@riversjin/dsh-subagent-route": "file:.upgrade-packages/riversjin-dsh-subagent-route-0.2.0.tgz",
+    "@riversjin/dsh-tick-template": "file:.upgrade-packages/riversjin-dsh-tick-template-0.1.1.tgz",
+    "@riversjin/dsh-trajectory": "file:.upgrade-packages/riversjin-dsh-trajectory-0.2.4.tgz",
+    "dsh-layered-memory": "file:.upgrade-packages/dsh-layered-memory-0.8.11-rivers.10.tgz",
+    "dsh-soul-md": "file:.upgrade-packages/dsh-soul-md-0.8.5-rivers.1.tgz",
+    "dsh-usage-stats": "file:.upgrade-packages/dsh-usage-stats-0.1.16-rivers.1.tgz",
+    "@tencent-connect/dsh-qqbot": "file:.upgrade-packages/tencent-connect-dsh-qqbot-0.4.1-rivers.12.tgz",
+    "dsh-better-edit": "1.2.0",
+    "dsh-composer-history": "0.8.15",
+    "dsh-context": "0.78.2",
+    "dshmarket": "1.73.6"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-better-edit",
+        "dsh-composer-history",
+        "dsh-context",
+        "dsh-soul-md",
+        "dshmarket",
+        "@tencent-connect/dsh-qqbot",
+        "@riversjin/dsh-context-cleanup",
+        "@riversjin/dsh-http-gzip",
+        "@riversjin/dsh-kimi-auto",
+        "dsh-layered-memory",
+        "@riversjin/dsh-optical-compaction",
+        "@riversjin/dsh-projection-cache",
+        "@riversjin/dsh-retry",
+        "@riversjin/dsh-session-id",
+        "dsh-usage-stats"
+      ]
+    }
+  }
+}

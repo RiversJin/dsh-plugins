@@ -1,0 +1,8 @@
+{
+  "name": "dsh-runtime",
+  "private": true,
+  "description": "Patched DeepSeek Harness 0.2.1-rc.5 runtime for the @riversjin plugin set",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.5"
+  }
+}

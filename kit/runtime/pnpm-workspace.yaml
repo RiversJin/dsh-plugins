@@ -1,0 +1,36 @@
+packages:
+  - .
+nodeLinker: hoisted
+supportedArchitectures:
+  os: [linux]
+  cpu: [x64]
+  libc: [glibc]
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  koffi: true
+  node-pty: true
+  '@lydell/node-pty': true
+  better-sqlite3: true
+  sqlite-vec: true
+  sharp: true
+  ssh2: true
+  cpu-features: true
+  esbuild: true
+  '@google/genai': false
+  protobufjs: false
+# Seven upstream packages carry local patches (see ../README.md). The tarballs are
+# copied into upgrade-packages/ by install.sh; they are built from
+# https://github.com/RiversJin/deepseek-harness branch local/schedule-idle-0.2.1-rc.5.
+overrides:
+  '@earendil-works/pi-ai': 1.1.0
+  '@deepseek-ai/dsh-client-ui-schedule': file:upgrade-packages/deepseek-ai-dsh-client-ui-schedule-0.2.1-rc.5.client2.tgz
+  '@deepseek-ai/dsh-compaction-basic': file:upgrade-packages/deepseek-ai-dsh-compaction-basic-0.2.1-rc.5.tgz
+  '@deepseek-ai/dsh-schedule': file:upgrade-packages/deepseek-ai-dsh-schedule-0.2.1-rc.5.tgz
+  '@deepseek-ai/dsh-session-format-v3-to-v4': file:upgrade-packages/deepseek-ai-dsh-session-format-v3-to-v4-0.2.1-rc.5.tgz
+  '@deepseek-ai/dsh-session-persistence-jsonl': file:upgrade-packages/deepseek-ai-dsh-session-persistence-jsonl-0.2.1-rc.5.tgz
+  '@deepseek-ai/dsh-time-context': file:upgrade-packages/deepseek-ai-dsh-time-context-0.2.1-rc.5.tgz
+  '@deepseek-ai/dsh-tool-schedule': file:upgrade-packages/deepseek-ai-dsh-tool-schedule-0.2.1-rc.5.tgz
+# dsh-llm-pi-ai declares ^1.1.0 but 1.4.0 moves kimi-coding to openai-completions and
+# rejects compat.allowEmptySignature; the upstream monorepo pins 1.1.0 with this patch.
+patchedDependencies:
+  '@earendil-works/pi-ai@1.1.0': patches/@earendil-works__pi-ai@1.1.0.patch
